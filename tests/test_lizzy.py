@@ -22,8 +22,10 @@ from lizzy.hamiltonian import (
     n_qubits,
     rotation_cost,
     terms_of,
+    weight,
 )
-from lizzy.symmetry import commuting_clusters, pair_clusters, z2_symmetries
+from lizzy.hamlib import fetch, load
+from lizzy.symmetry import commuting_clusters, pair_clusters, taper, z2_symmetries
 from lizzy.synthesize import synthesize
 from lizzy.trotter import (
     _collected_commutator,
@@ -135,6 +137,46 @@ def test_clusters_are_internally_commuting(name: str, n: int) -> None:
 def test_cluster_count_does_not_grow_with_size(name: str, n: int) -> None:
     """A Trotter step needs a basis change per cluster, and that count stays put."""
     assert len(commuting_clusters(model(name, n, seed=0))) <= 4
+
+
+@pytest.mark.parametrize("name", ["tfim", "tfxy", "heisenberg"])
+@pytest.mark.parametrize("n", [4, 5])
+def test_tapering_keeps_the_spectrum_of_its_sector(name: str, n: int) -> None:
+    """Every eigenvalue of the tapered Hamiltonian must be one of the original's.
+
+    Tapering claims to remove qubits without changing physics, which is only true if
+    the reduced spectrum sits inside the full one -- the claim worth checking, since a
+    wrong Clifford or a dropped phase would still produce a plausible-looking operator.
+    """
+    h = model(name, n, seed=1)
+    charges = z2_symmetries(h)
+    tapered, removed = taper(h)
+    assert tapered is not None
+    # One qubit per *commuting* charge: anticommuting charges share no eigenbasis, so
+    # an odd chain's X^n and Z^n cannot both be fixed and only one is used.
+    assert 0 < len(removed) <= len(charges)
+
+    def spectrum(hamiltonian_, width):
+        matrix = sum(
+            c.real * pauli_matrix(str(p)) for c, p in terms_of(hamiltonian_)
+        )
+        return np.sort(np.linalg.eigvalsh(matrix))
+
+    full = spectrum(h, n)
+    reduced = spectrum(tapered, n - len(removed))
+    assert all(np.min(np.abs(full - value)) < 1e-8 for value in reduced)
+
+
+def test_tapering_shortens_the_strings_it_keeps() -> None:
+    """The saving would be illusory if the tapering Clifford inflated Pauli weight;
+    on chemistry it does the opposite, which is why the reduction is worth taking."""
+    h = load(fetch("chemistry/electronic/standard/BH.zip"), "ham_BK-10")
+    tapered, removed = taper(h)
+    assert len(removed) == 4
+
+    before = np.mean([weight(p) for _, p in terms_of(h)])
+    after = np.mean([weight(p) for _, p in terms_of(tapered)])
+    assert after < before
 
 
 @pytest.mark.parametrize("name", ["tfim", "tfxy", "heisenberg"])

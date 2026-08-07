@@ -11,6 +11,7 @@ import networkx as nx
 import numpy as np
 from paulie.common.pauli_string_bitarray import PauliString
 from paulie.common.pauli_string_collection import PauliStringCollection
+from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 
 from lizzy.hamiltonian import anticommutation_matrix, hamiltonian, terms_of
@@ -126,3 +127,156 @@ def pair_clusters(hamiltonian_: PauliStringLinear) -> list[PauliStringLinear] | 
         hamiltonian([(str(p), c) for c, p in layers[colour]])
         for colour in sorted(layers)
     ]
+
+
+def _single_qubit_partners(symmetries, width):
+    """Pick one single-qubit Pauli per charge, anticommuting with that charge alone.
+
+    A charge can only be moved onto a qubit by a Pauli that anticommutes with it, and
+    the qubits must be distinct or two charges would land on the same one. The
+    anticommutation pattern of a candidate against the charge basis is a GF(2) vector;
+    ``k`` candidates on distinct qubits whose patterns are independent can be turned
+    into the identity by changing the charge basis, which is legitimate because any
+    product of charges is again a charge.
+
+    Returns ``(partners, qubits, basis)`` with ``basis`` the GF(2) change of charge
+    basis to apply, or ``None`` if no such selection exists.
+    """
+    count = len(symmetries)
+    candidates = []
+    for qubit in range(width):
+        for letter in "XYZ":
+            word = "".join(letter if k == qubit else "I" for k in range(width))
+            pauli = get_pauli_string(word)
+            pattern = np.array(
+                [int(not pauli.commutes_with(s)) for s in symmetries], dtype=np.int64
+            )
+            if pattern.any():
+                candidates.append((qubit, pauli, pattern))
+
+    chosen: list[tuple[int, PauliString]] = []
+    matrix = np.zeros((0, count), dtype=np.int64)
+    used: set[int] = set()
+    for qubit, pauli, pattern in candidates:
+        if qubit in used or len(chosen) == count:
+            continue
+        trial = np.vstack([matrix, pattern])
+        if _gf2_rank(trial) > len(chosen):
+            matrix, chosen = trial, chosen + [(qubit, pauli)]
+            used.add(qubit)
+    if len(chosen) < count:
+        return None
+
+    inverse = _gf2_inverse(matrix)
+    if inverse is None:
+        return None
+    return [p for _, p in chosen], [q for q, _ in chosen], inverse
+
+
+def _gf2_rank(matrix: np.ndarray) -> int:
+    """Rank of a 0/1 matrix over GF(2)."""
+    work = matrix.copy() % 2
+    rank = 0
+    for column in range(work.shape[1]):
+        pivot = next((r for r in range(rank, work.shape[0]) if work[r, column]), None)
+        if pivot is None:
+            continue
+        work[[rank, pivot]] = work[[pivot, rank]]
+        for row in range(work.shape[0]):
+            if row != rank and work[row, column]:
+                work[row] ^= work[rank]
+        rank += 1
+    return rank
+
+
+def _gf2_inverse(matrix: np.ndarray):
+    """Inverse of a square 0/1 matrix over GF(2), or None if singular."""
+    size = matrix.shape[0]
+    work = np.hstack([matrix % 2, np.eye(size, dtype=np.int64)])
+    for rank, column in enumerate(range(size)):
+        pivot = next((r for r in range(rank, size) if work[r, column]), None)
+        if pivot is None:
+            return None
+        work[[rank, pivot]] = work[[pivot, rank]]
+        for row in range(size):
+            if row != rank and work[row, column]:
+                work[row] ^= work[rank]
+    return work[:, size:]
+
+
+def _conjugate(coefficient, pauli, charge, partner):
+    """Conjugate one term by ``(charge + partner)/sqrt(2)``.
+
+    Only two cases arise here, because every Hamiltonian term commutes with a charge
+    by definition: the term is left alone when it also commutes with the partner, and
+    otherwise picks up the product with both. The phases are those of the underlying
+    Pauli products, pinned against dense matrices in the tests.
+    """
+    if pauli.commutes_with(partner):
+        return coefficient, pauli
+    phase = pauli.sign(charge) * (pauli @ charge).sign(partner)
+    return coefficient * phase, pauli @ charge @ partner
+
+
+def taper(hamiltonian_: PauliStringLinear, sector: list[int] | None = None):
+    r"""
+    Remove one qubit per independent charge, isospectrally.
+
+    Each :math:`\mathbb{Z}_{2}` charge is rotated onto a single-qubit Pauli by a
+    Clifford :math:`(\tau + \sigma)/\sqrt{2}`, after which every term either acts as
+    the identity or as :math:`\sigma` on that qubit. The qubit then carries no
+    dynamics: it can be replaced by its eigenvalue and dropped
+    (`Bravyi et al. <https://arxiv.org/abs/1701.08213>`__). The spectrum of the result
+    is the part of the original spectrum lying in the chosen sector.
+
+    Args:
+        hamiltonian_ (PauliStringLinear): The Hamiltonian.
+        sector (list[int], optional): Eigenvalue ``+1`` or ``-1`` per charge. Defaults
+            to all ``+1``.
+    Returns:
+        tuple: ``(tapered, qubits)`` -- the Hamiltonian on the remaining qubits and the
+        removed qubit indices -- or ``(None, [])`` when no charge admits a partner.
+    """
+    # Tapering needs an abelian charge group: two anticommuting charges are not
+    # simultaneously diagonalizable, so no common eigenbasis exists to fix. The
+    # centralizer basis need not be abelian -- a spin chain of odd length has both
+    # X^n and Z^n, which anticommute -- so a mutually commuting subset is taken.
+    symmetries: list[PauliString] = []
+    for candidate in z2_symmetries(hamiltonian_):
+        if all(candidate.commutes_with(kept) for kept in symmetries):
+            symmetries.append(candidate)
+    if not symmetries:
+        return None, []
+
+    width = max(len(p) for _, p in terms_of(hamiltonian_))
+    selection = _single_qubit_partners(symmetries, width)
+    if selection is None:
+        return None, []
+    partners, qubits, basis = selection
+
+    # Re-express the charges so that charge i is the only one the partner i sees.
+    charges = []
+    for index in range(len(symmetries)):
+        product = None
+        for source, use in enumerate(basis[:, index]):
+            if use:
+                product = symmetries[source] if product is None else product @ symmetries[source]
+        charges.append(product)
+
+    terms = [(c, p) for c, p in terms_of(hamiltonian_)]
+    for charge, partner in zip(charges, partners):
+        terms = [_conjugate(c, p, charge, partner) for c, p in terms]
+
+    signs = sector or [1] * len(qubits)
+    keep = [q for q in range(width) if q not in set(qubits)]
+    reduced: dict[str, complex] = {}
+    for coefficient, pauli in terms:
+        word = str(pauli)
+        for qubit, sign in zip(qubits, signs):
+            if word[qubit] != "I":
+                coefficient = coefficient * sign
+        short = "".join(word[q] for q in keep)
+        reduced[short] = reduced.get(short, 0) + coefficient
+    return hamiltonian(
+        [(w, c) for w, c in reduced.items() if abs(c) > 1e-12 and set(w) != {"I"}]
+    ), qubits

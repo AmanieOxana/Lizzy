@@ -45,6 +45,15 @@ Pricing emission inside the routing decision is what makes the `terms` candidate
 having: ungrouped it emits badly as ladders, but a shared frame would rather see the
 sequence as given, and that combination takes the largest chemistry instances.
 
+`symmetry.taper` removes one qubit per commuting conserved charge, rotating each onto
+a single-qubit Pauli and fixing its eigenvalue
+([Bravyi et al.](https://arxiv.org/abs/1701.08213)). It is a problem reduction rather
+than a compilation choice — the result acts on fewer qubits and holds only the chosen
+sector — so it is explicit, not automatic. On chemistry it pays twice: BH loses four of
+ten qubits and mean Pauli weight drops from 4.8 to 3.8, halving the circuit (1 890 →
+1 087 gates); LiH loses four of twelve (4 340 → 3 162). Every compiler benefits from
+it, so the comparison below is untapered throughout.
+
 Step counts come from the collected commutator bound
 ([Childs et al.](https://doi.org/10.1103/PhysRevX.11.011020), tight second-order
 constants with cancellation between chains kept), so sizing needs no oracle;
@@ -160,10 +169,6 @@ backend costs a function rather than an architecture.
 
 Beyond emission, in measured order of value:
 
-- **Qubit tapering.** BH at 10 qubits carries four Z2 charges, so 40% of the register
-  is removable against 2% for a spin chain. The charges are found and reported but
-  never applied; whether the tapering Clifford's weight growth eats the saving is
-  untested.
 - **Cluster count on dense instances.** Chemistry gives 17 commuting clusters where
   spin models give three, so a step pays 17 basis changes. Better colouring, or kernels
   on larger supports, attacks the term the formula actually spends.
