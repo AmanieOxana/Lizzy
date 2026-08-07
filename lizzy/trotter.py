@@ -330,28 +330,6 @@ def cluster_formula(
     return circuit
 
 
-def cluster_formula_cost(
-    clusters: list, time: float, error: float, calibration: float = 1.0
-) -> int | None:
-    """
-    Estimate the two-qubit gate count of the cluster formula, without building it.
-
-    Args:
-        clusters (list[PauliStringLinear]): The commuting clusters, in formula order.
-        time (float): Evolution time.
-        error (float): Target error.
-        calibration (float): Divides the step count, as in :func:`steps_for`.
-    Returns:
-        int | None: Estimated count, or ``None`` if the constant was not computable.
-    """
-    steps = steps_for_clusters(clusters, time, error, calibration)
-    if steps is None:
-        return None
-    # One built step prices the whole formula, and building it -- rather than summing
-    # ladder costs -- lets the block-aware count see pair kernels.
-    return steps * cluster_formula(clusters, time / steps, 1).two_qubit_gates
-
-
 def _steps_from(
     residual: float, time: float, error: float, order: int, calibration: float = 1.0
 ) -> int:

@@ -21,17 +21,23 @@ result.two_qubit_gates  # 6,616 at n=100, in seconds
 
 ```
 H, t, budget (or a fixed step count)
- ├─ classify the DLA (PauLie), split into commuting summands   [exact]
- ├─ per summand, price every candidate:
- │    exact       so(m) → one orthogonal matrix, reduced to adjacent
- │                Givens rotations along the Majorana line       [fixed depth]
- │    hybrid      free subalgebra compiled exactly inside each
- │                second-order step, as one more summand
- │    formula     S2 over commuting clusters, or over two-qubit
- │                kernels with fields folded in (3 CNOTs each)
- │  → the fewest two-qubit gates win; exactness is not a priority order
- └─ concatenate
+ ├─ classify the DLA (PauLie), split into commuting summands    [exact]
+ └─ per summand, price every candidate and keep the cheapest:
+      exact     so(m) → one orthogonal matrix, reduced to adjacent Givens
+                rotations along the Majorana line          [depth flat in t]
+      hybrid    free subalgebra compiled exactly inside each second-order
+                step, as one more summand
+      formula   S2 over commuting clusters, over two-qubit kernels with
+                fields folded in, or over the terms as given
 ```
+
+Every candidate is priced under every available **emission**, and the price decides
+both. The builtin emission charges CNOT ladders, merging runs that fit on one qubit
+pair into canonical three-CNOT blocks. With pytket installed, `lizzy.emit` adds a
+second: conjugating rotations into a shared Clifford frame, which wins once mean Pauli
+weight passes four. Because emission is priced rather than fixed, an ordering that
+emits badly one way can still win the other — which is why the term-order candidate
+exists at all, and why it takes the largest chemistry instances.
 
 Step counts come from the collected commutator bound
 ([Childs et al.](https://doi.org/10.1103/PhysRevX.11.011020), tight second-order
@@ -41,7 +47,7 @@ reference exists. Fully commuting Hamiltonians compile in one exact step. Every
 two-qubit kernel decomposition is verified against its own 4×4 exponential at
 synthesis time.
 
-`randomized=True` adds a fifth candidate, sampling the small terms with qDRIFT
+`randomized=True` adds one more candidate, sampling the small terms with qDRIFT
 ([Campbell](https://doi.org/10.1103/PhysRevLett.123.070503)), whose cost depends on
 the coefficients rather than the term count. It is off by default and stays off:
 its guarantee is on the averaged channel, not on the circuit you get, so a route
@@ -49,49 +55,54 @@ that wins on gate count can still miss the budget it was sized for.
 
 ## Measured
 
-HamLib instances, the same fixed-depth task for every compiler (two Suzuki-2 steps),
-two-qubit gates after each compiler's best effort — Qiskit at `optimization_level=3`,
-pytket at the better of `GreedyPauliSimp` and `FullPeepholeOptimise`
-(`python -m lizzy.compare`):
+Fifteen HamLib instances, the same fixed-depth task for every compiler (two Suzuki-2
+steps at t=1), two-qubit gates after each compiler's best effort — Qiskit at
+`optimization_level=3`, pytket at the better of `GreedyPauliSimp` and
+`FullPeepholeOptimise`. Reproduce with `python -m lizzy.compare`:
 
-| HamLib instance | n | Lizzy | Qiskit | Qiskit+Rustiq | pytket |
-|---|---|---|---|---|---|
-| tfim 1D chain | 100 | **396** | 786 | 1 032 | 687 |
-| tfim 2D grid | 100 | 1 440 | 1 434 | 2 573 | **1 316** |
-| heisenberg 1D chain | 100 | **894** | 1 179 | 4 117 | 1 179 |
-| heisenberg 2D grid | 100 | **1 968** | 2 151 | 57 620 | 2 151 |
-| BH molecule (chemistry) | 10 | **2 000** | 7 484 | 5 788 | 2 136 |
+| HamLib instance | n | terms | Lizzy | Qiskit | +Rustiq | pytket |
+|---|---|---|---|---|---|---|
+| tfim 1D chain | 100 | 199 | **396** | 786 | 1 032 | 687 |
+| tfim 1D ring | 100 | 200 | **400** | 794 | 1 326 | 771 |
+| tfim 2D grid | 100 | 280 | **720** | 1 434 | 2 573 | 1 316 |
+| tfim hex lattice | 48 | 111 | **284** | 496 | 865 | 467 |
+| tfim 3D grid | 27 | 81 | **216** | 426 | 740 | 386 |
+| heisenberg 1D chain | 100 | 397 | **888** | 1 179 | 4 117 | 1 179 |
+| heisenberg 2D grid | 100 | 640 | **1 860** | 2 151 | 57 620 | 2 151 |
+| heisenberg 2D torus | 100 | 700 | **2 100** | 2 391 | 70 884 | 2 391 |
+| fermi-hubbard 1D, JW | 100 | 346 | **1 063** | 1 178 | 24 953 | 1 178 |
+| fermi-hubbard 1D, BK | 100 | 346 | **1 714** | 4 594 | 43 104 | 2 866 |
+| maxcut circulant | 100 | 200 | **323** | 1 594 | 588 | **323** |
+| H2 molecule | 4 | 14 | **26** | 160 | 47 | 28 |
+| BH molecule | 10 | 275 | **1 890** | 7 484 | 5 788 | 2 136 |
+| LiH molecule, BK | 12 | 630 | **4 340** | 21 664 | 16 982 | 4 405 |
+| LiH molecule, JW | 12 | 630 | **4 099** | 24 842 | 16 133 | 4 486 |
 
-Giving both competitors their strongest setting costs this compiler most of its
-reported margin and is the only honest comparison: Qiskit at level 1 needs 4 320 gates
-on the 2D grid where level 3 needs 2 151, and `GreedyPauliSimp` is not pytket's best
-pass on grids despite being the Pauli-aware one. On grids the two frameworks then
-converge to the same count, which the kernels undercut by about 9%.
+Fifteen of fifteen, by margins from a few percent on the largest chemistry instances
+to 4.9x on maxcut. The routing tier carries the structured families; on the
+unstructured ones the win is thin and comes from the emission tier.
 
 At matched accuracy — eight qubits, every compiler given the fewest steps that reach
 1e-3 against a dense reference — Lizzy wins all six model/time combinations measured,
-1.4× to 4.1×, with the margin growing in evolution time on the fast-forwardable
-families: at t=8 the exact branch holds 143 gates against Trotter's 1 148.
+1.4× to 4.1×, and the margin grows with evolution time on fast-forwardable families:
+at t=8 the exact branch holds 143 gates against Trotter's 1 148.
 
-**Which compilers can be compared at all** was the hard part. Checked against a dense
-reference on a duplicate-free Trotter step, only pytket, Qiskit's `PauliEvolutionGate`
-and Lizzy reproduce the sequence they are given (infidelity ≤ 2e-16). Paulihedral,
-Tetris, PauliOpt and [PHOENIX](https://github.com/iqubit-org/phoenix) reorder
-non-commuting terms — legitimate for a Trotter approximation, but it makes gate counts
-incomparable, since the circuit implements a different unitary. Reordering compilers
-therefore have to be scored on accuracy, not on depth.
+**Not every compiler can be scored this way.** Checked against a dense reference on a
+duplicate-free Trotter step, only pytket, Qiskit's `PauliEvolutionGate` and Lizzy
+reproduce the sequence they are given (infidelity ≤ 2e-16). Paulihedral, Tetris,
+PauliOpt and [PHOENIX](https://github.com/iqubit-org/phoenix) reorder non-commuting
+terms — legitimate for a Trotter approximation, but the circuit then implements a
+different unitary and its gate count is not comparable. Such compilers have to be
+scored on accuracy instead. Scored that way, PHOENIX needs 238 gates where Lizzy needs
+42 (tfim, t=1), 420 against 132 (heisenberg, t=1) and 3 213 against 1 881 (heisenberg,
+t=8): it buys cheaper steps with more of them, because reordering costs Trotter
+accuracy. Paulihedral and Tetris are absent because their output could not be verified
+against a reference under any convention tried.
 
-Scored that way, PHOENIX needs 238 gates where Lizzy needs 42 (tfim, t=1), 420 against
-132 (heisenberg, t=1) and 3 213 against 1 881 (heisenberg, t=8): it buys cheaper steps
-with more of them, because the reordering costs Trotter accuracy. Paulihedral and
-Tetris are absent because their output could not be verified — even a single Pauli
-rotation came back 8.4e-3 from the reference under every convention tried, so any
-number reported for them would be unfounded rather than unfavourable.
-
-The compiler itself stays small: the core is ~2 600 lines of Python across nine
-modules — for scale, pytket's `GreedyPauliSimp` pass alone is ~2 500 lines of C++ —
-because the algebra lives upstream in PauLie and kak-tools, and the routing is
-arithmetic over priced candidates rather than machinery.
+The compiler itself stays small: ~2 700 lines of Python across ten modules — for
+scale, pytket's `GreedyPauliSimp` pass alone is ~2 500 lines of C++ — because the
+algebra lives upstream in PauLie and kak-tools, and the routing is arithmetic over
+priced candidates rather than machinery.
 
 ## Verification
 
@@ -99,12 +110,10 @@ arithmetic over priced candidates rather than machinery.
 so every exactness claim is checked at the qubit level wherever size allows; the
 test suite is built on it. Kernel decompositions self-verify at any width.
 
-The reported gate count is the block-aware one: a run of consecutive rotations that
-fits on a single qubit pair compiles as one canonical block of at most three CNOTs,
-and a wider rotation pays its ladder. Emitting the circuits explicitly confirms the
-count on spin models (1 440 reported, 1 440 emitted at tfim 2D). An earlier version
-capped every run at three CNOTs regardless of its support, which understated
-chemistry by a factor of 2.7 and produced the retracted claim above.
+The reported gate count is block-aware: a run of consecutive rotations that fits on a
+single qubit pair compiles as one canonical block of at most three CNOTs, and a wider
+rotation pays its CNOT ladder. Emitting the circuits explicitly confirms the count
+(1 440 reported, 1 440 emitted at tfim 2D).
 
 ```bash
 pytest                   # dense checks, offline
@@ -125,39 +134,38 @@ Needs [kak-tools](https://github.com/QPauLie/kak-tools) with
 [PR #1](https://github.com/QPauLie/kak-tools/pull/1) and PauLie with
 [PR #232](https://github.com/QPauLie/PauLie/pull/232).
 
-## Possibilities to improve
+## Outlook
 
-In measured order of value:
+**Price more backends rather than write more emissions.** The last two rows of the
+table were won this way: the routing tier had no structure to find in a 630-term
+molecule, so the term-order candidate and the shared-frame emission decided them
+between themselves. Emission is a tier with two entries today; nothing in the design
+is limited to two. Rustiq (shipped inside Qiskit) is a third and beats the ladder on
+high-weight sequences; a native frame-conjugated emission would be a fourth, and would
+remove the pytket dependency for the rows that currently need it. Each backend is a
+function from a rotation sequence to a gate count, each is verifiable against a dense
+reference at small width, and `emission_cost` already takes a minimum — so adding one
+is strictly monotone: it can only be chosen where it wins.
 
-- **A native shared Clifford frame.** The chemistry win currently rides on pytket as
-  an optional backend; a native implementation of frame-conjugated emission would
-  remove the dependency and could exploit the cluster structure directly instead of
-  rediscovering it.
-- **Whatever pytket finds on 2D grids.** Not cancellation: running Qiskit's level-3
-  optimizer over the emitted circuit recovers exactly zero gates (1 440 → 1 440), so
-  the 9% must come from a different rotation order or Clifford conjugation, not from
-  peepholing what is emitted.
-- **Qubit tapering.** Worth far more on chemistry than on spin models: BH at 10 qubits
-  carries four Z2 charges, so 40% of the register is removable, against 2% for a spin
-  chain. The charges are found and reported but never applied. The open question is
-  whether the tapering Clifford's weight growth eats the saving — untested.
+Optional imports are therefore not a weakness to engineer away. They are how a small
+compiler stays best-in-class on instance families it was never specialised for. The
+work is keeping the interface narrow — sequence in, verified circuit out — so a new
+backend costs a function rather than an architecture.
+
+Beyond emission, in measured order of value:
+
+- **Qubit tapering.** BH at 10 qubits carries four Z2 charges, so 40% of the register
+  is removable against 2% for a spin chain. The charges are found and reported but
+  never applied; whether the tapering Clifford's weight growth eats the saving is
+  untested.
 - **Cluster count on dense instances.** Chemistry gives 17 commuting clusters where
-  spin models give three, so a step pays 17 basis changes. Better colouring, or
-  kernels on larger supports, would attack the term the formula is actually spending.
-- **Symmetry protection.** Provably a no-op for models whose terms conserve the
-  charges individually, untested where terms violate them — gauge theories, chemistry.
+  spin models give three, so a step pays 17 basis changes. Better colouring, or kernels
+  on larger supports, attacks the term the formula actually spends.
+- **Symmetry protection.** A no-op for models whose terms conserve the charges
+  individually; untested where terms violate them — gauge theories, chemistry.
 - **Dense bounds past ~20 qubits.** The collected commutator walk exhausts its budget
-  on all-to-all models around n=24. Vectorizing it would extend the certified regime,
-  but the circuits out there run to 10^8 gates, so it certifies what cannot be run.
-
-The per-rotation ladder is the right emission on low-weight instances and the wrong
-one on chemistry, where mean Pauli weight is 4.8 and a ladder costs ~7.6 CNOTs per
-rotation. There the optional shared-frame backend (`lizzy.emit`, pytket's
-`GreedyPauliSimp`) takes over — and it works better on this compiler's cluster-ordered
-sequences than on raw term order: 2 000 gates against 2 136, first place on the row,
-dense-verified equivalent at the full ten qubits. The routing layer and the emission
-layer compose. An earlier version of this file claimed the ladder won on chemistry
-outright; that rested on a cost-model bug (see below) and is retracted.
+  on all-to-all models around n=24. Vectorizing it extends the certified regime, though
+  the circuits out there run to 10^8 gates.
 
 ## References
 

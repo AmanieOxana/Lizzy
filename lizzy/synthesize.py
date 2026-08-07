@@ -13,7 +13,15 @@ from paulie.common.pauli_string_linear import PauliStringLinear
 
 from lizzy import exact, trotter
 from lizzy.classify import classify, summands
-from lizzy.hamiltonian import Circuit, n_qubits, terms_of
+from lizzy.emit import tket_two_qubit_gates
+from lizzy.hamiltonian import (
+    Circuit,
+    hamiltonian,
+    n_qubits,
+    rotation_cost,
+    terms_of,
+    weight,
+)
 from lizzy.kernels import compile_layer
 from lizzy.symmetry import commuting_clusters, pair_clusters, z2_symmetries
 
@@ -227,21 +235,62 @@ def _hybrid_plan(free, rest, time, error, calibration, steps):
     )
 
 
+def emission_cost(circuit: Circuit, width: int) -> int:
+    """
+    Price a rotation sequence under the cheapest available emission.
+
+    The builtin count charges CNOT ladders with single-pair runs merged into
+    canonical blocks. With pytket installed, :mod:`lizzy.emit` offers a second
+    emission that conjugates rotations into a shared Clifford frame, which wins on
+    high-weight sequences. Whichever is cheaper is the price, so the emission tier
+    takes part in the routing decision rather than being applied after it -- an
+    ordering that emits badly under the builtin count can still be the right one.
+
+    Args:
+        circuit (Circuit): The rotations.
+        width (int): Number of qubits.
+    Returns:
+        int: The two-qubit gate count of the cheaper emission.
+    """
+    builtin = circuit.two_qubit_gates
+    if not circuit.rotations:
+        return builtin
+    # Frame conjugation pays for itself only on high-weight sequences: below weight
+    # four a ladder is already near-optimal, and the synthesis costs more to run than
+    # it saves. Gating on that keeps 2-local routing free of the call entirely.
+    mean_weight = sum(weight(p) for p, _ in circuit.rotations) / len(circuit.rotations)
+    if mean_weight < 4.0:
+        return builtin
+    shared = tket_two_qubit_gates(circuit, width)
+    return builtin if shared is None else min(builtin, shared)
+
+
 def _formula_plan(part, time, error, calibration, steps):
-    """Price the second-order formula under each applicable clustering.
+    """Price the second-order formula under each applicable ordering.
 
     Letter clusters emit plain rotations; pair-kernel layers emit through the exact
-    two-qubit KAK, fields folded in. Both are priced from one built step and the
-    cheaper wins -- their error constants agree to within a few percent on the
-    models measured, so the step cost is the whole difference.
+    two-qubit KAK, fields folded in; term order is the ungrouped formula, which wins
+    where an instance has no structure to group and a downstream Pauli-network
+    emission would rather see the terms as given. Each is priced from one built step,
+    with its own error constant, and the cheapest stands.
     """
+    term_order = [hamiltonian([(str(pauli), c)]) for c, pauli in terms_of(part)]
     plans = []
-    for clusters, builder in (
-        (commuting_clusters(part), None),
-        (pair_clusters(part), compile_layer),
+    for clusters, builder, regroup in (
+        (commuting_clusters(part), None, True),
+        (pair_clusters(part), compile_layer, True),
+        (term_order, None, False),
     ):
         if clusters is None:
             continue
+        if regroup:
+            # The formula merges the last summand's half-passes into one full pass, so
+            # the merge goes to the summand whose rotations cost the most. Term order
+            # is exempt: its whole point is to leave the sequence as given.
+            clusters = sorted(
+                clusters,
+                key=lambda cluster: sum(rotation_cost(p) for _, p in terms_of(cluster)),
+            )
         count = steps
         if count is None:
             count = trotter.steps_for_clusters(clusters, time, error, calibration)
@@ -253,7 +302,7 @@ def _formula_plan(part, time, error, calibration, steps):
         fixed = count
         plans.append(
             (
-                count * one_step.two_qubit_gates,
+                count * emission_cost(one_step, n_qubits(part)),
                 lambda c=clusters, k=fixed, b=builder: trotter.cluster_formula(
                     c, time, k, compile_cluster=b
                 ),

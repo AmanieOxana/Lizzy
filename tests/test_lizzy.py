@@ -15,14 +15,20 @@ from lizzy.bench import calibrate
 from lizzy.classify import classify, is_fast_forwardable, summands
 from lizzy.dense import circuit_matrix, evolution, infidelity, pauli_matrix
 from lizzy.exact import decompose, free_part, is_decomposable
-from lizzy.hamiltonian import Circuit, hamiltonian, model, n_qubits, terms_of
+from lizzy.hamiltonian import (
+    Circuit,
+    hamiltonian,
+    model,
+    n_qubits,
+    rotation_cost,
+    terms_of,
+)
 from lizzy.symmetry import commuting_clusters, pair_clusters, z2_symmetries
 from lizzy.synthesize import synthesize
 from lizzy.trotter import (
     _collected_commutator,
     cluster_error_constant,
     cluster_formula,
-    cluster_formula_cost,
     coefficient_norm,
     commutator_sum,
     nested_commutator_sum,
@@ -283,15 +289,19 @@ def test_fixed_steps_mode_emits_without_sizing() -> None:
     """
     h = model("heisenberg_all_to_all", 5, seed=0)
     terms = len(terms_of(h))
-    # The router picks whichever clustering builds the cheaper step; mirror it.
-    candidates = [commuting_clusters(h), pair_clusters(h)]
-    counts = {
-        3 * (2 * (terms - len(terms_of(c[-1]))) + len(terms_of(c[-1])))
-        for c in candidates
-    }
+
+    def cost(cluster):
+        return sum(rotation_cost(p) for _, p in terms_of(cluster))
+
+    # The router picks whichever clustering builds the cheaper step, and hands the
+    # merged middle to the costliest summand; mirror both choices.
+    counts = set()
+    for candidate in (commuting_clusters(h), pair_clusters(h)):
+        middle = max(candidate, key=cost)
+        counts.add(3 * (2 * (terms - len(terms_of(middle))) + len(terms_of(middle))))
     result = synthesize(h, time=1.0, steps=3)
     assert result.routes == ["trotter2"]
-    # The last summand's adjacent half-passes merge, so it is emitted once per step.
+    # The costliest summand's adjacent half-passes merge: emitted once per step.
     assert len(result.circuit.rotations) in counts
 
 
@@ -496,16 +506,14 @@ def test_cluster_constant_is_cached() -> None:
 
 
 def test_cluster_route_is_cheaper_and_taken() -> None:
-    """On a Heisenberg model the cluster bound beats the chain bound, and the router
-    follows the arithmetic."""
+    """On a Heisenberg model a clustered second-order step beats the chain-bounded
+    formula, and the router follows the arithmetic."""
     h = model("heisenberg_all_to_all", 5, seed=1)
     chain = product_formula_cost(h, 1.0, 1e-3, 4)
-    cluster = cluster_formula_cost(commuting_clusters(h), 1.0, 1e-3)
-    assert cluster is not None and cluster < chain
 
     result = synthesize(h, time=1.0, error=1e-3, order=4)
     assert "trotter2" in result.routes
-    assert result.two_qubit_gates <= cluster
+    assert result.two_qubit_gates < chain
     assert infidelity(evolution(h, 1.0), circuit_matrix(result.circuit, 5)) < 1e-3
 
 

@@ -19,10 +19,20 @@ from lizzy.synthesize import synthesize
 
 HAMLIB_CASES = [
     ("tfim-1D-100", "condensedmatter/tfim/tfim.zip", "graph-1D-grid-nonpbc-qubitnodes_Lx-100_h-1"),
+    ("tfim-1D-pbc", "condensedmatter/tfim/tfim.zip", "graph-1D-grid-pbc-qubitnodes_Lx-100_h-1"),
     ("tfim-2D-10x10", "condensedmatter/tfim/tfim.zip", "graph-2D-grid-nonpbc-qubitnodes_Lx-10_Ly-10_h-1"),
+    ("tfim-hex-4x4", "condensedmatter/tfim/tfim.zip", "graph-2D-hex-nonpbc-qubitnodes_Lx-4_Ly-4_h-1"),
+    ("tfim-3D-3x3x3", "condensedmatter/tfim/tfim.zip", "graph-3D-grid-nonpbc-qubitnodes_Lx-3_Ly-3_Lz-3_h-1"),
     ("heis-1D-100", "condensedmatter/heisenberg/heis.zip", "graph-1D-grid-nonpbc-qubitnodes_Lx-100_h-1"),
     ("heis-2D-10x10", "condensedmatter/heisenberg/heis.zip", "graph-2D-grid-nonpbc-qubitnodes_Lx-10_Ly-10_h-1"),
-    ("BH-chemistry", "chemistry/electronic/standard/BH.zip", "ham_BK-10"),
+    ("heis-2D-pbc", "condensedmatter/heisenberg/heis.zip", "graph-2D-grid-pbc-qubitnodes_Lx-10_Ly-10_h-1"),
+    ("fh-1D-jw", "condensedmatter/fermihubbard/FH_D-1.zip", "fh-graph-1D-grid-nonpbc-qubitnodes_Lx-50_U-4_enc-jw"),
+    ("fh-1D-bk", "condensedmatter/fermihubbard/FH_D-1.zip", "fh-graph-1D-grid-nonpbc-qubitnodes_Lx-50_U-4_enc-bk"),
+    ("maxcut-circ100", "binaryoptimization/maxcut/random/ham-graph-circulant.zip", "circ-n-100_offsets-1-2"),
+    ("H2-BK", "chemistry/electronic/standard/H2.zip", "ham_BK-4"),
+    ("BH-BK", "chemistry/electronic/standard/BH.zip", "ham_BK-10"),
+    ("LiH-BK", "chemistry/electronic/standard/LiH.zip", "ham_BK-12"),
+    ("LiH-JW", "chemistry/electronic/standard/LiH.zip", "ham_JW-12"),
 ]
 
 ORACLE_CASES = [
@@ -169,7 +179,11 @@ def hamlib_table(steps: int = 2, time_: float = 1.0) -> None:
     print(f"\nHamLib, fixed steps={steps}, t={time_}")
     print(f"{'instance':16}{'n':>5}{'terms':>7}{'lizzy':>9}{'qiskit':>9}{'rustiq':>9}{'tket':>9}  route")
     for label, archive, key in HAMLIB_CASES:
-        h = load(fetch(archive), key)
+        try:
+            h = load(fetch(archive), key)
+        except Exception as failure:  # noqa: BLE001 - a bad row must not kill the table
+            print(f"{label:16} {type(failure).__name__}: {failure}", flush=True)
+            continue
         width = n_qubits(h)
         ours = synthesize(h, time=time_, steps=steps)
         # The router prices the emissions too: the builtin ladder/block count against
