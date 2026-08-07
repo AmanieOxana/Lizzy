@@ -142,6 +142,36 @@ def synthesize(
     return result
 
 
+def emission_cost(circuit: Circuit, width: int) -> int:
+    """
+    Price a rotation sequence under the cheapest available emission.
+
+    The builtin count charges CNOT ladders with single-pair runs merged into
+    canonical blocks. With pytket installed, :mod:`lizzy.emit` offers a second
+    emission that conjugates rotations into a shared Clifford frame, which wins on
+    high-weight sequences. Whichever is cheaper is the price, so the emission tier
+    takes part in the routing decision rather than being applied after it -- an
+    ordering that emits badly under the builtin count can still be the right one.
+
+    Args:
+        circuit (Circuit): The rotations.
+        width (int): Number of qubits.
+    Returns:
+        int: The two-qubit gate count of the cheaper emission.
+    """
+    builtin = circuit.two_qubit_gates
+    if not circuit.rotations:
+        return builtin
+    # Frame conjugation pays for itself only on high-weight sequences: below weight
+    # four a ladder is already near-optimal, and the synthesis costs more to run than
+    # it saves. Gating on that keeps 2-local routing free of the call entirely.
+    mean_weight = sum(weight(p) for p, _ in circuit.rotations) / len(circuit.rotations)
+    if mean_weight < 4.0:
+        return builtin
+    shared = tket_two_qubit_gates(circuit, width)
+    return builtin if shared is None else min(builtin, shared)
+
+
 def _synthesize_part(
     part: PauliStringLinear,
     time: float,
@@ -167,7 +197,7 @@ def _synthesize_part(
     if exact.is_decomposable(part):
         try:
             fixed = exact.decompose(part, time, route="exact")
-            candidates.append((fixed.two_qubit_gates, fixed))
+            candidates.append((emission_cost(fixed, n_qubits(part)), fixed))
         except _EXACT_FAILURES:
             pass
 
@@ -229,40 +259,11 @@ def _hybrid_plan(free, rest, time, error, calibration, steps):
         free_step.extend(exact.decompose(piece, time / steps, route="exact-in-step"))
     one_step = trotter.cluster_formula(clusters, time / steps, 1, middle=free_step)
     fixed = steps
+    width = n_qubits(rest) if terms_of(rest) else n_qubits(free)
     return (
-        steps * one_step.two_qubit_gates,
+        steps * emission_cost(one_step, width),
         lambda: trotter.cluster_formula(clusters, time, fixed, middle=free_step),
     )
-
-
-def emission_cost(circuit: Circuit, width: int) -> int:
-    """
-    Price a rotation sequence under the cheapest available emission.
-
-    The builtin count charges CNOT ladders with single-pair runs merged into
-    canonical blocks. With pytket installed, :mod:`lizzy.emit` offers a second
-    emission that conjugates rotations into a shared Clifford frame, which wins on
-    high-weight sequences. Whichever is cheaper is the price, so the emission tier
-    takes part in the routing decision rather than being applied after it -- an
-    ordering that emits badly under the builtin count can still be the right one.
-
-    Args:
-        circuit (Circuit): The rotations.
-        width (int): Number of qubits.
-    Returns:
-        int: The two-qubit gate count of the cheaper emission.
-    """
-    builtin = circuit.two_qubit_gates
-    if not circuit.rotations:
-        return builtin
-    # Frame conjugation pays for itself only on high-weight sequences: below weight
-    # four a ladder is already near-optimal, and the synthesis costs more to run than
-    # it saves. Gating on that keeps 2-local routing free of the call entirely.
-    mean_weight = sum(weight(p) for p, _ in circuit.rotations) / len(circuit.rotations)
-    if mean_weight < 4.0:
-        return builtin
-    shared = tket_two_qubit_gates(circuit, width)
-    return builtin if shared is None else min(builtin, shared)
 
 
 def _formula_plan(part, time, error, calibration, steps):
@@ -312,11 +313,14 @@ def _formula_plan(part, time, error, calibration, steps):
 
 
 def _chain_plan(part, time, error, order, calibration):
-    """Price the requested-order formula sized by the chain bound."""
-    cost = trotter.product_formula_cost(part, time, error, order, calibration)
+    """Price the requested-order formula sized by the chain bound.
+
+    Priced from one built step like the others, so the emission tier sees it too.
+    """
     steps = trotter.steps_for(part, time, error, order, calibration)
+    one_step = trotter.product_formula(part, time / steps, 1, order, route="trotter")
     return (
-        cost,
+        steps * emission_cost(one_step, n_qubits(part)),
         lambda: trotter.product_formula(part, time, steps, order, route="trotter"),
     )
 

@@ -23,21 +23,27 @@ result.two_qubit_gates  # 6,616 at n=100, in seconds
 H, t, budget (or a fixed step count)
  ├─ classify the DLA (PauLie), split into commuting summands    [exact]
  └─ per summand, price every candidate and keep the cheapest:
-      exact     so(m) → one orthogonal matrix, reduced to adjacent Givens
-                rotations along the Majorana line          [depth flat in t]
-      hybrid    free subalgebra compiled exactly inside each second-order
-                step, as one more summand
-      formula   S2 over commuting clusters, over two-qubit kernels with
-                fields folded in, or over the terms as given
+      exact      so(m) → one orthogonal matrix, reduced to adjacent Givens
+                 rotations along the Majorana line         [depth flat in t]
+      hybrid     free subalgebra compiled exactly inside each second-order
+                 step, as one more summand
+      clusters   S2 over commuting clusters
+      kernels    S2 over two-qubit kernels, fields folded in (3 CNOTs each)
+      terms      S2 over the terms as given, ungrouped
+      chain      the requested Suzuki order, sized by the chain bound
+      (sampled)  qDRIFT on the small terms, only with randomized=True
 ```
 
-Every candidate is priced under every available **emission**, and the price decides
-both. The builtin emission charges CNOT ladders, merging runs that fit on one qubit
-pair into canonical three-CNOT blocks. With pytket installed, `lizzy.emit` adds a
-second: conjugating rotations into a shared Clifford frame, which wins once mean Pauli
-weight passes four. Because emission is priced rather than fixed, an ordering that
-emits badly one way can still win the other — which is why the term-order candidate
-exists at all, and why it takes the largest chemistry instances.
+Each candidate is priced from one built step, under **every available emission**, and
+the cheapest circuit wins — exactness is not a priority order. The builtin emission
+charges CNOT ladders, merging runs that fit on one qubit pair into canonical
+three-CNOT blocks. With pytket installed, `lizzy.emit` adds a second: conjugating
+rotations into a shared Clifford frame, which wins once mean Pauli weight passes four
+(below that the call is skipped, since a ladder is already near-optimal there).
+
+Pricing emission inside the routing decision is what makes the `terms` candidate worth
+having: ungrouped it emits badly as ladders, but a shared frame would rather see the
+sequence as given, and that combination takes the largest chemistry instances.
 
 Step counts come from the collected commutator bound
 ([Childs et al.](https://doi.org/10.1103/PhysRevX.11.011020), tight second-order
@@ -47,7 +53,7 @@ reference exists. Fully commuting Hamiltonians compile in one exact step. Every
 two-qubit kernel decomposition is verified against its own 4×4 exponential at
 synthesis time.
 
-`randomized=True` adds one more candidate, sampling the small terms with qDRIFT
+The sampled candidate uses qDRIFT
 ([Campbell](https://doi.org/10.1103/PhysRevLett.123.070503)), whose cost depends on
 the coefficients rather than the term count. It is off by default and stays off:
 its guarantee is on the averaged channel, not on the circuit you get, so a route
