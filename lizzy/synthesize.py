@@ -2,9 +2,9 @@
     The top-level route: classify, reduce, and take the cheapest exact way out.
 
     Nothing here decides anything the classification cannot justify. Each step either
-    removes work exactly -- tapering, summand splitting, the free part -- or sizes a
-    product formula from a bound it can defend. The sampled branch is the exception and
-    is off by default; see :func:`synthesize`.
+    removes work exactly -- summand splitting, the free part -- or sizes a product
+    formula from a bound it can defend. The sampled branch is the exception and is off
+    by default; see :func:`synthesize`.
 """
 
 from dataclasses import dataclass, field
@@ -329,9 +329,9 @@ def _chain_plan(part, time, error, order, calibration):
     The top-level route: classify, reduce, and take the cheapest exact way out.
 
     Nothing here decides anything the classification cannot justify. Each step either
-    removes work exactly -- tapering, summand splitting, the free part -- or sizes a
-    product formula from a bound it can defend. The sampled branch is the exception and
-    is off by default; see :func:`synthesize`.
+    removes work exactly -- summand splitting, the free part -- or sizes a product
+    formula from a bound it can defend. The sampled branch is the exception and is off
+    by default; see :func:`synthesize`.
 """
 
 from dataclasses import dataclass, field
