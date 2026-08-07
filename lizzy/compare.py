@@ -12,8 +12,6 @@
 
 import warnings
 
-import numpy as np
-
 from lizzy.dense import circuit_matrix, evolution, infidelity
 from lizzy.hamiltonian import Circuit, model, n_qubits, terms_of
 from lizzy.hamlib import fetch, load
@@ -81,32 +79,14 @@ def tket_cx(hamiltonian_, width, time_, steps):
     but FullPeepholeOptimise beats it on grids -- so all of them run and the best
     result stands, the same courtesy Qiskit gets from optimization_level=3.
     """
-    from pytket import Circuit as TketCircuit
     from pytket import OpType
-    from pytket.circuit import PauliExpBox
-    from pytket.passes import (
-        AutoRebase,
-        DecomposeBoxes,
-        FullPeepholeOptimise,
-        GreedyPauliSimp,
-    )
-    from pytket.pauli import Pauli
+    from pytket.passes import AutoRebase, FullPeepholeOptimise, GreedyPauliSimp
 
-    letters = {"X": Pauli.X, "Y": Pauli.Y, "Z": Pauli.Z}
-
-    def build():
-        circuit = TketCircuit(width)
-        for word, angle in _s2_sequence(hamiltonian_, time_, steps):
-            support = [q for q, letter in enumerate(word) if letter != "I"]
-            if support:
-                box = PauliExpBox([letters[word[q]] for q in support], 2 * angle / np.pi)
-                circuit.add_pauliexpbox(box, support)
-        DecomposeBoxes().apply(circuit)
-        return circuit
+    from lizzy.emit import pauli_boxes
 
     counts = []
     for optimization in (GreedyPauliSimp(), FullPeepholeOptimise()):
-        circuit = build()
+        circuit = pauli_boxes(_s2_sequence(hamiltonian_, time_, steps), width)
         optimization.apply(circuit)
         AutoRebase({OpType.CX, OpType.TK1}).apply(circuit)
         counts.append(circuit.n_gates_of_type(OpType.CX))
@@ -115,23 +95,15 @@ def tket_cx(hamiltonian_, width, time_, steps):
 
 def _check_tket_convention() -> None:
     """Pin pytket's half-turn phase convention against the dense reference."""
-    from pytket import Circuit as TketCircuit
-    from pytket.circuit import PauliExpBox
-    from pytket.passes import DecomposeBoxes
-    from pytket.pauli import Pauli
+    from lizzy.emit import pauli_boxes
 
-    letters = {"X": Pauli.X, "Y": Pauli.Y, "Z": Pauli.Z}
     h = model("heisenberg", 3, seed=1)
-    circuit = TketCircuit(3)
+    sequence = _s2_sequence(h, 0.7, 2)
     ours = Circuit()
-    for word, angle in _s2_sequence(h, 0.7, 2):
-        support = [q for q, letter in enumerate(word) if letter != "I"]
-        circuit.add_pauliexpbox(
-            PauliExpBox([letters[word[q]] for q in support], 2 * angle / np.pi), support
-        )
+    for word, angle in sequence:
         ours.add(word, angle, "x")
-    DecomposeBoxes().apply(circuit)
-    assert infidelity(circuit_matrix(ours, 3), circuit.get_unitary()) < 1e-9
+    boxes = pauli_boxes(sequence, 3)
+    assert infidelity(circuit_matrix(ours, 3), boxes.get_unitary()) < 1e-9
 
 
 def _bisect(check, high=64):

@@ -18,6 +18,41 @@
 from lizzy.hamiltonian import Circuit
 
 
+def pauli_boxes(rotations, width: int):
+    """
+    Build the pytket box circuit of a rotation sequence, boxes decomposed.
+
+    The one place the angle convention lives: pytket's ``PauliExpBox`` takes half
+    turns, ours is :math:`e^{-i\theta P}`, so the box parameter is
+    :math:`2\theta/\\pi`.
+
+    Args:
+        rotations: ``(word_or_PauliString, angle)`` pairs.
+        width (int): Number of qubits.
+    Returns:
+        pytket.Circuit: The circuit, ready for an optimization pass.
+
+    Raises:
+        ImportError: If pytket is not installed.
+    """
+    import numpy as np
+    from pytket import Circuit as TketCircuit
+    from pytket.circuit import PauliExpBox
+    from pytket.passes import DecomposeBoxes
+    from pytket.pauli import Pauli
+
+    letters = {"X": Pauli.X, "Y": Pauli.Y, "Z": Pauli.Z}
+    circuit = TketCircuit(width)
+    for pauli, angle in rotations:
+        word = str(pauli)
+        support = [q for q, letter in enumerate(word) if letter != "I"]
+        if support:
+            box = PauliExpBox([letters[word[q]] for q in support], 2 * angle / np.pi)
+            circuit.add_pauliexpbox(box, support)
+    DecomposeBoxes().apply(circuit)
+    return circuit
+
+
 def tket_circuit(circuit: Circuit, width: int):
     """
     Re-synthesize a rotation sequence in a shared Clifford frame with pytket.
@@ -31,22 +66,10 @@ def tket_circuit(circuit: Circuit, width: int):
     Raises:
         ImportError: If pytket is not installed.
     """
-    import numpy as np
-    from pytket import Circuit as TketCircuit
     from pytket import OpType
-    from pytket.circuit import PauliExpBox
-    from pytket.passes import AutoRebase, DecomposeBoxes, GreedyPauliSimp
-    from pytket.pauli import Pauli
+    from pytket.passes import AutoRebase, GreedyPauliSimp
 
-    letters = {"X": Pauli.X, "Y": Pauli.Y, "Z": Pauli.Z}
-    synthesized = TketCircuit(width)
-    for pauli, angle in circuit.rotations:
-        word = str(pauli)
-        support = [q for q, letter in enumerate(word) if letter != "I"]
-        if support:
-            box = PauliExpBox([letters[word[q]] for q in support], 2 * angle / np.pi)
-            synthesized.add_pauliexpbox(box, support)
-    DecomposeBoxes().apply(synthesized)
+    synthesized = pauli_boxes(circuit.rotations, width)
     GreedyPauliSimp().apply(synthesized)
     AutoRebase({OpType.CX, OpType.TK1}).apply(synthesized)
     return synthesized

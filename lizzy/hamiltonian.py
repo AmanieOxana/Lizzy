@@ -89,6 +89,12 @@ def rotation_cost(pauli: PauliString) -> int:
     return TWO_QUBIT_COST_PER_WEIGHT * max(weight(pauli) - 1, 0)
 
 
+def _block_charge(support: frozenset, cost: int) -> int:
+    """Charge one run of rotations: a run held by a single qubit pair compiles as one
+    canonical block of at most three CNOTs; a wider run pays its ladders."""
+    return min(cost, 3) if len(support) <= 2 else cost
+
+
 @dataclass
 class Circuit:
     r"""
@@ -139,12 +145,6 @@ class Circuit:
         (Kernpiler's partial-Trotterization observation, arXiv:2504.07214). Runs
         that a pair cannot hold are charged their CNOT ladders.
         """
-        def charge(support: frozenset[int], cost: int) -> int:
-            # The three-CNOT cap is what a canonical two-qubit block costs, so it
-            # only applies to a run that fits on one pair. A wider rotation pays
-            # its ladder; capping it too would report a block that nothing emits.
-            return min(cost, 3) if len(support) <= 2 else cost
-
         total = 0
         run_cost = 0
         run_support: frozenset[int] = frozenset()
@@ -155,9 +155,9 @@ class Circuit:
                 run_support = joined
                 run_cost += rotation_cost(pauli)
             else:
-                total += charge(run_support, run_cost)
+                total += _block_charge(run_support, run_cost)
                 run_support, run_cost = support, rotation_cost(pauli)
-        return total + charge(run_support, run_cost)
+        return total + _block_charge(run_support, run_cost)
 
     def cost_by_route(self) -> dict[str, int]:
         """
@@ -182,12 +182,12 @@ class Circuit:
                 run_cost += rotation_cost(pauli)
             else:
                 if run_route is not None:
-                    capped = min(run_cost, 3) if len(run_support) <= 2 else run_cost
-                    costs[run_route] = costs.get(run_route, 0) + capped
+                    costs[run_route] = costs.get(run_route, 0) + _block_charge(
+                        run_support, run_cost
+                    )
                 run_support, run_cost, run_route = support, rotation_cost(pauli), route
         if run_route is not None:
-            capped = min(run_cost, 3) if len(run_support) <= 2 else run_cost
-            costs[run_route] = costs.get(run_route, 0) + capped
+            costs[run_route] = costs.get(run_route, 0) + _block_charge(run_support, run_cost)
         return costs
 
     def __len__(self) -> int:
