@@ -1,0 +1,292 @@
+"""
+    The top-level route: classify, reduce, and take the cheapest exact way out.
+
+    Nothing here decides anything the classification cannot justify. Each step either
+    removes work exactly -- tapering, summand splitting, the free part -- or sizes a
+    product formula from a bound it can defend. The sampled branch is the exception and
+    is off by default; see :func:`synthesize`.
+"""
+
+from dataclasses import dataclass, field
+
+from paulie.common.pauli_string_linear import PauliStringLinear
+
+from lizzy import exact, trotter
+from lizzy.classify import classify, summands
+from lizzy.hamiltonian import Circuit, n_qubits, terms_of
+from lizzy.kernels import compile_layer
+from lizzy.symmetry import commuting_clusters, pair_clusters, z2_symmetries
+
+# What an exact-branch attempt can raise when the classification admits an algebra but
+# the upstream irrep machinery cannot realize this particular generator set in it.
+_EXACT_FAILURES = (StopIteration, NotImplementedError, ValueError)
+
+
+@dataclass
+class Result:
+    """
+    What a synthesis run produced, and how it got there.
+
+    Attributes:
+        circuit (Circuit): The rotations implementing the evolution.
+        algebra (str): PauLie's name for the DLA of the whole Hamiltonian.
+        summands (int): Number of parts the Hamiltonian split into.
+        symmetries (int): Independent Z2 symmetries found, i.e. qubits tapering could
+            remove.
+        clusters (int): Commuting groups in the largest Trotterized part, zero if
+            nothing was Trotterized.
+        routes (list[str]): Which branches were used.
+        randomized (bool): True if any part was sampled, in which case the error is a
+            bound in expectation rather than on this one circuit.
+    """
+
+    circuit: Circuit
+    algebra: str = ""
+    summands: int = 0
+    symmetries: int = 0
+    clusters: int = 0
+    routes: list[str] = field(default_factory=list)
+    randomized: bool = False
+
+    @property
+    def two_qubit_gates(self) -> int:
+        """int: Two-qubit gate count of the whole circuit."""
+        return self.circuit.two_qubit_gates
+
+
+def synthesize(
+    hamiltonian_: PauliStringLinear,
+    time: float,
+    error: float = 1e-3,
+    order: int = 4,
+    seed: int | None = None,
+    randomized: bool = False,
+    calibration: float = 1.0,
+    steps: int | None = None,
+) -> Result:
+    r"""
+    Synthesize :math:`e^{-itH}` for a Pauli Hamiltonian.
+
+    The route is chosen per part:
+
+    * a part whose algebra is small and orthogonal is decomposed exactly, at a depth
+      that does not grow with ``time``;
+    * otherwise the largest exactly-compilable subset of its terms is taken out and
+      decomposed, and only the remainder goes through a product formula -- either the
+      requested order sized by the chain bound, or the second-order formula over
+      commuting clusters sized by the collected cluster bound (route ``trotter2``),
+      whichever costs fewer gates.
+
+    With ``randomized=True`` the remainder is additionally split by coefficient
+    magnitude and its small terms are sampled rather than stepped through.
+    **The sampled branch does not keep the error budget, so it is off by default**: its
+    gate count is sized from a bound on the averaged channel that the count does not in
+    fact deliver, and the shortfall is in the gate count rather than in sampling noise.
+
+    Args:
+        hamiltonian_ (PauliStringLinear): The Hamiltonian.
+        time (float): Evolution time.
+        error (float): Total error budget, divided over the parts.
+        order (int): Product-formula order for whatever cannot be done exactly.
+        seed (int, optional): Seed for the sampled branch.
+        randomized (bool): Allow the sampled branch. See the warning above.
+        calibration (float): Divides the estimated step count. One keeps the bound; a
+            measured factor trades it for a smaller circuit. See
+            :func:`lizzy.bench.calibrate`.
+        steps (int, optional): Fixed step count for the inexact branches, like the
+            ``reps`` of a Qiskit ``PauliEvolutionGate``. Sizing, bounds and their cost
+            are skipped entirely, and **no error statement is made**: the circuit is
+            the second-order cluster formula with exactly this many steps, however
+            accurate that turns out to be. Exact branches still run where the routing
+            allows them.
+    Returns:
+        Result: The circuit and an account of the route taken. ``Result.randomized``
+        records whether anything was actually sampled.
+    """
+    parts = summands(hamiltonian_)
+    terms_count = len(terms_of(hamiltonian_))
+    # Naming the algebra is reporting, not routing, and classification at dense sizes
+    # costs minutes; the same budget that gates the exact branches gates the name.
+    small = terms_count <= max(64, 8 * n_qubits(hamiltonian_))
+    result = Result(
+        circuit=Circuit(),
+        algebra=classify(hamiltonian_).get_algebra()
+        if small
+        else f"(unclassified, {terms_count} terms)",
+        summands=len(parts),
+        symmetries=len(z2_symmetries(hamiltonian_)),
+    )
+
+    for part in parts:
+        _synthesize_part(
+            part,
+            time,
+            error / len(parts),
+            order,
+            seed,
+            randomized,
+            calibration,
+            steps,
+            result,
+        )
+
+    result.routes = sorted(set(result.circuit.provenance))
+    return result
+
+
+def _synthesize_part(
+    part: PauliStringLinear,
+    time: float,
+    error: float,
+    order: int,
+    seed: int | None,
+    randomized: bool,
+    calibration: float,
+    steps: int | None,
+    result: Result,
+) -> None:
+    """Route one summand: every branch is a candidate, the fewest gates win.
+
+    Exactness is not a priority order. The exact route pays its full fixed depth
+    however close the evolution is to the identity, and the hybrid pays its free
+    networks every step, so at short times a plain formula can beat both; which one
+    wins is arithmetic on this instance, not a preference. Exact attempts can also
+    fail structurally -- the classification says so(m), yet the irrep mapping cannot
+    embed this generator set -- and a failed candidate simply drops out.
+    """
+    candidates: list[tuple[int, object]] = []
+
+    if exact.is_decomposable(part):
+        try:
+            fixed = exact.decompose(part, time, route="exact")
+            candidates.append((fixed.two_qubit_gates, fixed))
+        except _EXACT_FAILURES:
+            pass
+
+    free, rest = exact.free_part(part)
+    if free is not None:
+        try:
+            hybrid = _hybrid_plan(free, rest, time, error, calibration, steps)
+        except _EXACT_FAILURES:
+            hybrid = None
+        if hybrid is not None:
+            candidates.append(hybrid)
+
+    formula = _formula_plan(part, time, error, calibration, steps)
+    if formula is not None:
+        candidates.append(formula)
+    if steps is None:
+        candidates.append(_chain_plan(part, time, error, order, calibration))
+
+    cost, plan = min(candidates, key=lambda c: c[0])
+
+    if randomized and steps is None:
+        large, small = trotter.split_by_magnitude(part)
+        if terms_of(small) and terms_of(large):
+            sampled = trotter.product_formula_cost(
+                large, time, error / 2, order, calibration
+            ) + trotter.qdrift_cost(small, time, error / 2)
+            if sampled < cost:
+                inner = trotter.steps_for(large, time, error / 2, order, calibration)
+                result.circuit.extend(
+                    trotter.product_formula(large, time, inner, order, route="trotter")
+                )
+                result.circuit.extend(
+                    trotter.qdrift(small, time, error / 2, seed, route="qdrift")
+                )
+                result.randomized = True
+                return
+
+    result.circuit.extend(plan() if callable(plan) else plan)
+    result.clusters = max(result.clusters, len(commuting_clusters(part)))
+
+
+def _hybrid_plan(free, rest, time, error, calibration, steps):
+    r"""Price the free-part-as-summand formula, deferring the full build.
+
+    The cluster bound never asked its summands to be commuting clusters -- only that
+    each :math:`e^{\tau H_\gamma}` is implemented exactly, which the free part
+    satisfies through its Givens network. It enters as the last summand, applied once
+    per step at full step time, decomposed once and replayed. One built step prices
+    the whole formula.
+    """
+    clusters = commuting_clusters(rest) + [free]
+    if steps is None:
+        steps = trotter.steps_for_clusters(clusters, time, error, calibration)
+    if steps is None:
+        return None
+
+    free_step = Circuit()
+    for piece in summands(free):
+        free_step.extend(exact.decompose(piece, time / steps, route="exact-in-step"))
+    one_step = trotter.cluster_formula(clusters, time / steps, 1, middle=free_step)
+    fixed = steps
+    return (
+        steps * one_step.two_qubit_gates,
+        lambda: trotter.cluster_formula(clusters, time, fixed, middle=free_step),
+    )
+
+
+def _formula_plan(part, time, error, calibration, steps):
+    """Price the second-order formula under each applicable clustering.
+
+    Letter clusters emit plain rotations; pair-kernel layers emit through the exact
+    two-qubit KAK, fields folded in. Both are priced from one built step and the
+    cheaper wins -- their error constants agree to within a few percent on the
+    models measured, so the step cost is the whole difference.
+    """
+    plans = []
+    for clusters, builder in (
+        (commuting_clusters(part), None),
+        (pair_clusters(part), compile_layer),
+    ):
+        if clusters is None:
+            continue
+        count = steps
+        if count is None:
+            count = trotter.steps_for_clusters(clusters, time, error, calibration)
+        if count is None:
+            continue
+        one_step = trotter.cluster_formula(
+            clusters, time / count, 1, compile_cluster=builder
+        )
+        fixed = count
+        plans.append(
+            (
+                count * one_step.two_qubit_gates,
+                lambda c=clusters, k=fixed, b=builder: trotter.cluster_formula(
+                    c, time, k, compile_cluster=b
+                ),
+            )
+        )
+    return min(plans, key=lambda x: x[0]) if plans else None
+
+
+def _chain_plan(part, time, error, order, calibration):
+    """Price the requested-order formula sized by the chain bound."""
+    cost = trotter.product_formula_cost(part, time, error, order, calibration)
+    steps = trotter.steps_for(part, time, error, order, calibration)
+    return (
+        cost,
+        lambda: trotter.product_formula(part, time, steps, order, route="trotter"),
+    )
+
+
+"""
+    The top-level route: classify, reduce, and take the cheapest exact way out.
+
+    Nothing here decides anything the classification cannot justify. Each step either
+    removes work exactly -- tapering, summand splitting, the free part -- or sizes a
+    product formula from a bound it can defend. The sampled branch is the exception and
+    is off by default; see :func:`synthesize`.
+"""
+
+from dataclasses import dataclass, field
+
+from paulie.common.pauli_string_linear import PauliStringLinear
+
+from lizzy.hamiltonian import Circuit
+
+# What an exact-branch attempt can raise when the classification admits an algebra but
+# the upstream irrep machinery cannot realize this particular generator set in it.
+_EXACT_FAILURES = (StopIteration, NotImplementedError, ValueError)

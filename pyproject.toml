@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lizzy"
+version = "0.1.0"
+description = "DLA-routed unitary synthesis for Pauli Hamiltonians: classify, price every branch, let the cheapest circuit win"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "networkx>=3.0",
+    "paulie",
+    "pennylane>=0.38",
+    "kak_tools",
+]
+
+[project.optional-dependencies]
+hamlib = ["h5py>=3.8", "openfermion>=1.5"]
+compare = ["qiskit>=1.3", "pytket>=1.30"]
+test = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["lizzy*"]
+
+[tool.pytest.ini_options]
+markers = ["slow: tests that run a full decomposition sweep"]
