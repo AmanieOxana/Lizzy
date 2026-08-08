@@ -94,8 +94,21 @@ steps at t=1), two-qubit gates after each compiler's best effort — Qiskit at
 | LiH molecule, JW | 12 | 630 | **4 099** | 24 842 | 16 133 | 4 486 |
 
 Fifteen of fifteen, by margins from a few percent on the largest chemistry instances
-to 4.9x on maxcut. The routing tier carries the structured families; on the
-unstructured ones the win is thin and comes from the emission tier.
+to 4.9x on maxcut.
+
+**Mean Pauli weight, not algebra dimension, decides how much of that is this
+compiler's own work.** With the pytket backend removed the score is 9/15, and the
+split is sharp: every instance of weight ≤1.9 is won on the builtin emission alone
+(tfim on all five lattices, heisenberg on all three, fermi-hubbard under
+Jordan-Wigner), every instance of weight ≥2.0 is lost (maxcut 2.0, H2 2.6,
+fermi-hubbard under Bravyi-Kitaev 2.8, BH 4.8, LiH 5.6-6.3). Algebra dimension does
+not predict it — seven of the nine wins have exponential DLAs, and two of the six
+losses are polynomial.
+
+Weight two is where the exact tools end. The Givens route needs the whole algebra to
+be `so(m)`; the kernels need every term to fit one qubit pair. Above that there is no
+structural tool left and the builtin emission falls back to a ladder per rotation,
+which is where a shared Clifford frame takes over.
 
 At matched accuracy — eight qubits, every compiler given the fewest steps that reach
 1e-3 against a dense reference — Lizzy wins all six model/time combinations measured,
@@ -166,6 +179,15 @@ Optional imports are therefore not a weakness to engineer away. They are how a s
 compiler stays best-in-class on instance families it was never specialised for. The
 work is keeping the interface narrow — sequence in, verified circuit out — so a new
 backend costs a function rather than an architecture.
+
+**Close the gap at weight two.** The measurement above localises where this compiler
+stops having its own answer, and two techniques sit squarely in it. A *parity network*
+would synthesize a commuting diagonal Hamiltonian as one shared CNOT tree rather than a
+ladder per term — maxcut is fully commuting, weight two, and still costs 400 gates here
+against pytket's 323, which is exactly that gap. *Kernels on wider supports* would
+extend the exact two-qubit KAK to three or four qubits; whether it pays is arithmetic,
+since a general three-qubit unitary already costs around twenty CNOTs and only wins
+where enough terms share the triple.
 
 **Widen what counts as exactly compilable.** The exact route fires when the whole
 algebra is `so(m)`, and `free_part` finds one exactly-compilable subset when it does

@@ -16,6 +16,7 @@ from lizzy.classify import classify, summands
 from lizzy.emit import tket_two_qubit_gates
 from lizzy.hamiltonian import (
     Circuit,
+    fold_phases,
     hamiltonian,
     n_qubits,
     rotation_cost,
@@ -235,7 +236,9 @@ def _synthesize_part(
                 result.randomized = True
                 return
 
-    result.circuit.extend(plan() if callable(plan) else plan)
+    # Folding is applied to what is emitted, not to the one step a plan is priced
+    # from, so a plan's price is an upper bound on the circuit it produces.
+    result.circuit.extend(fold_phases(plan() if callable(plan) else plan))
     result.clusters = max(result.clusters, len(commuting_clusters(part)))
 
 

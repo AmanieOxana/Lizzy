@@ -218,7 +218,7 @@ def test_hybrid_mechanism_meets_the_budget(n: int) -> None:
     free, rest = free_part(h)
     cost, build = _hybrid_plan(free, rest, 1.0, 1e-3, 1.0, None)
     circuit = build()
-    assert circuit.two_qubit_gates == cost
+    assert circuit.two_qubit_gates <= cost  # folding can only improve on the price
     assert infidelity(evolution(h, 1.0), circuit_matrix(circuit, n)) < 1e-3
 
 
@@ -330,21 +330,23 @@ def test_fixed_steps_mode_emits_without_sizing() -> None:
     is made, and none of the bounds are paid for.
     """
     h = model("heisenberg_all_to_all", 5, seed=0)
-    terms = len(terms_of(h))
 
     def cost(cluster):
         return sum(rotation_cost(p) for _, p in terms_of(cluster))
 
-    # The router picks whichever clustering builds the cheaper step, and hands the
-    # merged middle to the costliest summand; mirror both choices.
-    counts = set()
-    for candidate in (commuting_clusters(h), pair_clusters(h)):
-        middle = max(candidate, key=cost)
-        counts.add(3 * (2 * (terms - len(terms_of(middle))) + len(terms_of(middle))))
     result = synthesize(h, time=1.0, steps=3)
     assert result.routes == ["trotter2"]
-    # The costliest summand's adjacent half-passes merge: emitted once per step.
-    assert len(result.circuit.rotations) in counts
+
+    # Whichever clustering the router priced cheaper, the emitted circuit must be
+    # that formula at exactly three steps -- checked as a unitary, since phase
+    # folding makes the rotation count a poor proxy for the depth contract.
+    emitted = circuit_matrix(result.circuit, 5)
+    expected = []
+    for candidate in (commuting_clusters(h), pair_clusters(h)):
+        ordered = sorted(candidate, key=cost)
+        expected.append(circuit_matrix(cluster_formula(ordered, 1.0, 3), 5))
+    assert any(infidelity(emitted, reference) < 1e-10 for reference in expected)
+    assert len(result.circuit.rotations) <= 3 * 2 * len(terms_of(h))
 
 
 def test_routing_is_arithmetic_not_precedence() -> None:

@@ -194,6 +194,51 @@ class Circuit:
         return len(self.rotations)
 
 
+def fold_phases(circuit: "Circuit", tolerance: float = 1e-12) -> "Circuit":
+    r"""
+    Merge rotations about the same Pauli, and drop the ones that cancel.
+
+    Two rotations about :math:`P` can be brought together whenever every rotation
+    between them commutes with :math:`P`, and once adjacent they are one rotation of
+    the summed angle. A symmetric step repeats every term twice by construction, so
+    this is not a rare coincidence: on a fully commuting Hamiltonian it halves the
+    sequence, and it merges across steps as well.
+
+    A merged angle that is a multiple of :math:`2\pi` leaves the identity behind and
+    the rotation is dropped; multiples of :math:`\pi` are kept, since those differ by
+    a global phase this representation does not carry.
+
+    Args:
+        circuit (Circuit): The rotations.
+        tolerance (float): Angle below which a rotation counts as the identity.
+    Returns:
+        Circuit: An equivalent circuit, never longer.
+    """
+    kept: list[tuple[PauliString, float, str]] = []
+    for pauli, angle in zip(
+        [p for p, _ in circuit.rotations], [a for _, a in circuit.rotations]
+    ):
+        route = circuit.provenance[len(kept)] if len(kept) < len(circuit.provenance) else ""
+        merged = False
+        for index in range(len(kept) - 1, -1, -1):
+            other, other_angle, other_route = kept[index]
+            if str(other) == str(pauli):
+                kept[index] = (other, other_angle + angle, other_route)
+                merged = True
+                break
+            if not other.commutes_with(pauli):
+                break
+        if not merged:
+            kept.append((pauli, angle, route))
+
+    folded = Circuit()
+    for pauli, angle, route in kept:
+        if abs(angle % (2 * np.pi)) < tolerance:
+            continue
+        folded.add(pauli, angle, route)
+    return folded
+
+
 def hamiltonian(terms: dict[str, float] | list[tuple[str, float]]) -> PauliStringLinear:
     """
     Build a Hamiltonian from Pauli strings and coefficients.
