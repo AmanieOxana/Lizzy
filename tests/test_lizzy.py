@@ -15,6 +15,13 @@ from lizzy.bench import calibrate
 from lizzy.classify import classify, is_fast_forwardable, summands
 from lizzy.dense import circuit_matrix, evolution, infidelity, pauli_matrix
 from lizzy.exact import decompose, free_part, is_decomposable
+from lizzy.frame import (
+    clifford_to,
+    find_assignment,
+    is_symplectic,
+    pauli_vectors,
+    witt_extend,
+)
 from lizzy.hamiltonian import (
     Circuit,
     hamiltonian,
@@ -186,6 +193,65 @@ def test_symmetries_commute_with_every_term(name: str, n: int) -> None:
     h = model(name, n, seed=0)
     for symmetry in z2_symmetries(h):
         assert all(symmetry.commutes_with(p) for _, p in terms_of(h))
+
+
+# ---------------------------------------------------------------------------
+# Clifford frames
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sites", [2, 3, 4])
+def test_clifford_carries_bravyi_kitaev_onto_jordan_wigner(sites: int) -> None:
+    """The same model in two encodings is Clifford equivalent, and the map is built.
+
+    This is the whole claim of lizzy.frame in one test: Bravyi-Kitaev and
+    Jordan-Wigner are two representations of one algebra, the second is markedly more
+    local, and the Clifford between them is constructible rather than searched for.
+    """
+    archive = fetch("condensedmatter/fermihubbard/FH_D-1.zip")
+    jw = load(archive, f"fh-graph-1D-grid-nonpbc-qubitnodes_Lx-{sites}_U-4_enc-jw")
+    bk = load(archive, f"fh-graph-1D-grid-nonpbc-qubitnodes_Lx-{sites}_U-4_enc-bk")
+    width = n_qubits(jw)
+
+    matrix = clifford_to(bk, jw)
+    assert matrix is not None
+    assert is_symplectic(matrix, width)
+
+    images = (pauli_vectors(bk) @ matrix) % 2
+    assert {tuple(row) for row in images} == {tuple(row) for row in pauli_vectors(jw)}
+
+
+def test_matching_must_respect_algebraic_dependencies() -> None:
+    """Anticommutation alone is not the equivalence criterion.
+
+    Dependent generators have to map to the same dependencies, or the linear map
+    breaks on exactly those terms. The assignment is what enforces it, so every term
+    it returns must be reachable, not merely most of them.
+    """
+    archive = fetch("condensedmatter/fermihubbard/FH_D-1.zip")
+    jw = load(archive, "fh-graph-1D-grid-nonpbc-qubitnodes_Lx-2_U-4_enc-jw")
+    bk = load(archive, "fh-graph-1D-grid-nonpbc-qubitnodes_Lx-2_U-4_enc-bk")
+    source, target = pauli_vectors(bk), pauli_vectors(jw)
+    width = source.shape[1] // 2
+
+    assignment = find_assignment(source, target, width)
+    assert assignment is not None
+    assert sorted(assignment) == list(range(source.shape[0]))  # a bijection
+
+    matrix = clifford_to(bk, jw)
+    images = (source @ matrix) % 2
+    for index, image in enumerate(images):
+        assert np.array_equal(image, target[assignment[index]])
+
+
+def test_witt_extension_refuses_a_non_isometry() -> None:
+    """A matching that does not preserve the form has no symplectic extension, and
+    saying so beats returning a matrix that quietly is not a Clifford."""
+    width = 2
+    source = [np.array([1, 0, 0, 0]), np.array([0, 0, 1, 0])]   # anticommuting pair
+    target = [np.array([1, 0, 0, 0]), np.array([0, 1, 0, 0])]   # commuting pair
+    with pytest.raises(ValueError):
+        witt_extend(source, target, width)
 
 
 # ---------------------------------------------------------------------------

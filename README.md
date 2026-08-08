@@ -196,6 +196,29 @@ needs a six-qubit kernel at O(4^6) gates. Above weight two there is no exact str
 to widen into — which is why the honest options are to change the representation, as
 double factorization does below, or to let the emission tier carry it.
 
+**Choose the representation, do not accept it.** The Pauli form of a Hamiltonian is a
+choice, and it decides whether the exact tools apply at all: the same Fermi-Hubbard
+model is fully two-local under Jordan-Wigner and 58% two-local under Bravyi-Kitaev,
+1 176 gates against 3 640. PauLie classifies both as `4*so(6)` — one algebra, so the
+better representation is Clifford-reachable, not lost.
+
+`lizzy.frame` constructs that Clifford. Following
+[Aguilar et al.](https://arxiv.org/abs/2408.00081), Clifford equivalence needs a shared
+anticommutation graph *and* shared algebraic dependencies; matching on the graph alone
+leaves dependent generators unplaceable and the linear map fails on exactly those.
+With both respected, Witt's theorem turns the isometry into a symplectic map. Verified
+at 4, 6 and 8 qubits: the Bravyi-Kitaev terms land exactly on the Jordan-Wigner set,
+mean weight 2.2 to 1.67.
+
+Two pieces stand between that and using it in synthesis. The reference representation
+is currently supplied rather than derived — the classification gives the canonical
+graph (PauLie's types A/B1/B2/B3 *are* the theorem's canonical forms, and its tracked
+canonicalizer already records the contractions), so deriving it is reachable but not
+done. And the symplectic matrix needs phase tracking to become a signed circuit.
+Compared to the published alternative — [simulated annealing on Pauli
+weight](https://arxiv.org/abs/2502.11933), 15–40% — a constructed frame is worth 210%
+on the instance measured here.
+
 **Widen what counts as exactly compilable.** The exact route fires when the whole
 algebra is `so(m)`, and `free_part` finds one exactly-compilable subset when it does
 not. The chemistry literature generalizes this: split a Hamiltonian into
