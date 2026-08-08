@@ -174,21 +174,27 @@ not. The chemistry literature generalizes this: split a Hamiltonian into
 precision. Two structures are within reach and both belong to the routing tier, where
 this compiler's knowledge already lives:
 
-- **Double factorization.** The two-electron tensor has low rank, so a molecular
-  Hamiltonian decomposes into O(N) fragments that are each free-fermionic — each one a
-  target for the Givens route rather than for a product formula. Implemented in
-  [ffsim](https://github.com/qiskit-community/ffsim) and Qiskit, with
-  [symmetry-compressed variants](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00352)
-  reducing the fragment count further. This addresses exactly the two instances where
-  the margin here is thinnest, and would move them from an emission win back to a
-  routing win.
-- **Free fermions in disguise.** [Elman, Chapman and
-  Flammia](https://arxiv.org/abs/2012.07857) show that a Hamiltonian whose frustration
-  graph is (even-hole, claw)-free and contains a simplicial clique has a free-fermion
-  solution even when no Jordan-Wigner transformation finds one. The frustration graph
-  is `anticommutation_matrix`, already computed on every route — but the test is graph
-  theory, not classification, so PauLie reports these models as exponential and the
-  exact branch never sees them.
+- **Double factorization** — affordable, and the more promising of the two. The
+  two-electron tensor has low rank, so a molecular Hamiltonian decomposes into O(N)
+  fragments that are each free-fermionic: each one a target for the Givens route
+  rather than for a product formula. The decomposition is an O(N^6) classical
+  eigendecomposition, routine in quantum chemistry at the sizes here, and implemented
+  in [ffsim](https://github.com/qiskit-community/ffsim) and Qiskit with
+  [symmetry-compressed variants](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00352).
+  The obstacle is not cost but input: it needs the fermionic one- and two-body tensors,
+  which a Pauli Hamiltonian only yields if its encoding is known. HamLib names the
+  encoding in the instance key; in general it has to be supplied.
+- **Free fermions in disguise** — cheap to rule out, infeasible to confirm.
+  [Elman, Chapman and Flammia](https://arxiv.org/abs/2012.07857) show that a
+  Hamiltonian whose frustration graph is (even-hole, claw)-free with a simplicial
+  clique has a free-fermion solution even when no Jordan-Wigner transformation finds
+  one, and the frustration graph is `anticommutation_matrix`, already built on every
+  route. But recognizing even-hole-free graphs is O(n^9) at best after a long line of
+  improvements from O(n^40); at 630 terms that is not a computation anyone runs.
+  Claw-freeness alone costs O(n·d^3) and is a sound *necessary* screen — instant on
+  these instances, and correctly separating tfim (claw-free, and indeed
+  free-fermionic) from heisenberg and H2 (both clawed). It can therefore rule the
+  structure out, never in.
 
 Beyond that, in measured order of value:
 
