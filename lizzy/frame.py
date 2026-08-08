@@ -17,9 +17,11 @@
     extension theorem turns the isometry on the span into a symplectic map of the whole
     space, which is a Clifford.
 
-    What is built here is the symplectic matrix. Using it inside synthesis needs two
-    further pieces: a reference representation derived from the classification rather
-    than supplied, and phase tracking to turn the matrix into a signed circuit.
+    :func:`clifford_to` builds the symplectic matrix and :func:`conjugate` applies it
+    with the signs, so a Hamiltonian handed over in the worse representation can be
+    moved to the better one and compiled there. What is still supplied rather than
+    derived is the reference: the classification names the canonical graph, so
+    constructing a target representation from it alone is reachable but not done here.
 """
 
 import numpy as np
@@ -319,3 +321,90 @@ def clifford_to(hamiltonian_: PauliStringLinear, reference: PauliStringLinear):
         return witt_extend([source[i] for i in chosen], [images[i] for i in chosen], width)
     except ValueError:
         return None
+
+
+def _generator_images(matrix: np.ndarray, width: int):
+    """The signed Paulis that X_i and Z_i become under the Clifford."""
+    from paulie.common.pauli_string_factory import get_pauli_string
+
+    images = []
+    for row in matrix:
+        letters = []
+        for qubit in range(width):
+            x, z = int(row[qubit]), int(row[width + qubit])
+            letters.append({(0, 0): "I", (1, 0): "X", (0, 1): "Z", (1, 1): "Y"}[(x, z)])
+        images.append(get_pauli_string("".join(letters)))
+    return images
+
+
+def _decompose_phase(pauli, width: int):
+    r"""Get :math:`\mu` and the generator list with :math:`P = \mu \prod_i g_i`.
+
+    A Pauli is the product of the ``X`` and ``Z`` generators its bit vector names, but
+    only up to a power of ``i`` -- ``Y`` is ``XZ`` times a phase. Conjugation acts on
+    the generators, so that phase has to be divided out first and multiplied back
+    afterwards, or every ``Y`` in the Hamiltonian acquires a wrong sign.
+    """
+    from paulie.common.pauli_string_factory import get_pauli_string
+
+    bits = pauli.bits
+    generators = []
+    for qubit in range(width):
+        if int(bits[2 * qubit]):
+            generators.append(("x", qubit))
+    for qubit in range(width):
+        if int(bits[2 * qubit + 1]):
+            generators.append(("z", qubit))
+
+    accumulated, phase = None, 1 + 0j
+    for kind, qubit in generators:
+        letter = "X" if kind == "x" else "Z"
+        single = get_pauli_string("".join(letter if k == qubit else "I" for k in range(width)))
+        if accumulated is None:
+            accumulated = single
+        else:
+            phase *= accumulated.sign(single)
+            accumulated = accumulated @ single
+    return phase, generators
+
+
+def conjugate(hamiltonian_: PauliStringLinear, matrix: np.ndarray) -> PauliStringLinear:
+    """
+    Apply the Clifford given by a symplectic matrix to a Hamiltonian.
+
+    The matrix fixes where the generators go; the signs are the free part, and taking
+    them all positive picks one Clifford out of the Pauli coset, which is enough since
+    the coset members differ by signs that a synthesis can absorb. Every term's phase
+    is then bookkeeping: divide out the phase relating it to its generator product,
+    map each generator, and multiply the images back together.
+
+    Args:
+        hamiltonian_ (PauliStringLinear): The Hamiltonian.
+        matrix (numpy.ndarray): Symplectic matrix from :func:`clifford_to`.
+    Returns:
+        PauliStringLinear: The conjugated Hamiltonian, same spectrum.
+    """
+    from lizzy.hamiltonian import hamiltonian
+
+    width = matrix.shape[0] // 2
+    images = _generator_images(matrix, width)
+
+    transformed: dict[str, complex] = {}
+    for coefficient, pauli in terms_of(hamiltonian_):
+        phase, generators = _decompose_phase(pauli, width)
+        accumulated, built = None, 1 + 0j
+        for kind, qubit in generators:
+            image = images[qubit if kind == "x" else width + qubit]
+            if accumulated is None:
+                accumulated = image
+            else:
+                built *= accumulated.sign(image)
+                accumulated = accumulated @ image
+        if accumulated is None:
+            continue
+        value = coefficient * built / phase
+        word = str(accumulated)
+        transformed[word] = transformed.get(word, 0) + value
+    return hamiltonian(
+        [(word, value) for word, value in transformed.items() if abs(value) > 1e-12]
+    )

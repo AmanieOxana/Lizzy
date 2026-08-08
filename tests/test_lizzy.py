@@ -17,6 +17,7 @@ from lizzy.dense import circuit_matrix, evolution, infidelity, pauli_matrix
 from lizzy.exact import decompose, free_part, is_decomposable
 from lizzy.frame import (
     clifford_to,
+    conjugate,
     find_assignment,
     is_symplectic,
     pauli_vectors,
@@ -242,6 +243,43 @@ def test_matching_must_respect_algebraic_dependencies() -> None:
     images = (source @ matrix) % 2
     for index, image in enumerate(images):
         assert np.array_equal(image, target[assignment[index]])
+
+
+@pytest.mark.parametrize("sites", [2, 3])
+def test_conjugation_preserves_the_spectrum(sites: int) -> None:
+    """A Clifford cannot move eigenvalues, so a phase slip shows up as a moved one.
+
+    This is the check that matters for the sign bookkeeping: Y is XZ up to a phase, and
+    getting that wrong yields a plausible-looking operator with the wrong spectrum.
+    """
+    archive = fetch("condensedmatter/fermihubbard/FH_D-1.zip")
+    jw = load(archive, f"fh-graph-1D-grid-nonpbc-qubitnodes_Lx-{sites}_U-4_enc-jw")
+    bk = load(archive, f"fh-graph-1D-grid-nonpbc-qubitnodes_Lx-{sites}_U-4_enc-bk")
+
+    transformed = conjugate(bk, clifford_to(bk, jw))
+
+    def spectrum(hamiltonian_):
+        matrix = sum(c.real * pauli_matrix(str(p)) for c, p in terms_of(hamiltonian_))
+        return np.sort(np.linalg.eigvalsh(matrix))
+
+    assert np.abs(spectrum(bk) - spectrum(transformed)).max() < 1e-9
+
+
+@pytest.mark.parametrize("sites", [2, 3])
+def test_the_frame_recovers_the_better_representation_cost(sites: int) -> None:
+    """The point of the frame: compiling the moved Hamiltonian costs what the good
+    representation costs, not what the one handed over costs."""
+    archive = fetch("condensedmatter/fermihubbard/FH_D-1.zip")
+    jw = load(archive, f"fh-graph-1D-grid-nonpbc-qubitnodes_Lx-{sites}_U-4_enc-jw")
+    bk = load(archive, f"fh-graph-1D-grid-nonpbc-qubitnodes_Lx-{sites}_U-4_enc-bk")
+
+    moved = conjugate(bk, clifford_to(bk, jw))
+    before = synthesize(bk, time=1.0, steps=2).two_qubit_gates
+    after = synthesize(moved, time=1.0, steps=2).two_qubit_gates
+    reference = synthesize(jw, time=1.0, steps=2).two_qubit_gates
+
+    assert after <= reference
+    assert after < before
 
 
 def test_witt_extension_refuses_a_non_isometry() -> None:
