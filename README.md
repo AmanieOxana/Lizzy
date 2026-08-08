@@ -181,13 +181,20 @@ work is keeping the interface narrow — sequence in, verified circuit out — s
 backend costs a function rather than an architecture.
 
 **Close the gap at weight two.** The measurement above localises where this compiler
-stops having its own answer, and two techniques sit squarely in it. A *parity network*
-would synthesize a commuting diagonal Hamiltonian as one shared CNOT tree rather than a
+stops having its own answer, and two techniques sit squarely in it. A *parity network* would
+synthesize a commuting diagonal Hamiltonian as one shared CNOT tree rather than a
 ladder per term — maxcut is fully commuting, weight two, and still costs 400 gates here
-against pytket's 323, which is exactly that gap. *Kernels on wider supports* would
-extend the exact two-qubit KAK to three or four qubits; whether it pays is arithmetic,
-since a general three-qubit unitary already costs around twenty CNOTs and only wins
-where enough terms share the triple.
+against pytket's 323, which is exactly that gap. It is narrow but real: it applies
+wherever a cluster is diagonal, which every clustering produces.
+
+Widening the kernels is *not* the other half, and the arithmetic says so plainly. A
+general three-qubit unitary costs around twenty CNOTs, so a three-qubit kernel only
+pays where more than about five terms share the same triple. On LiH, 509 of 630 terms
+have weight above three and would not fit such a kernel at all, and the ones that do
+share a triple 2.9 times on average. Wider still is worse: holding a weight-six term
+needs a six-qubit kernel at O(4^6) gates. Above weight two there is no exact structure
+to widen into — which is why the honest options are to change the representation, as
+double factorization does below, or to let the emission tier carry it.
 
 **Widen what counts as exactly compilable.** The exact route fires when the whole
 algebra is `so(m)`, and `free_part` finds one exactly-compilable subset when it does
