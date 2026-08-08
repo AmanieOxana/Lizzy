@@ -167,7 +167,30 @@ compiler stays best-in-class on instance families it was never specialised for. 
 work is keeping the interface narrow — sequence in, verified circuit out — so a new
 backend costs a function rather than an architecture.
 
-Beyond emission, in measured order of value:
+**Widen what counts as exactly compilable.** The exact route fires when the whole
+algebra is `so(m)`, and `free_part` finds one exactly-compilable subset when it does
+not. The chemistry literature generalizes this: split a Hamiltonian into
+*fast-forwardable fragments*, each implementable for any time at a cost independent of
+precision. Two structures are within reach and both belong to the routing tier, where
+this compiler's knowledge already lives:
+
+- **Double factorization.** The two-electron tensor has low rank, so a molecular
+  Hamiltonian decomposes into O(N) fragments that are each free-fermionic — each one a
+  target for the Givens route rather than for a product formula. Implemented in
+  [ffsim](https://github.com/qiskit-community/ffsim) and Qiskit, with
+  [symmetry-compressed variants](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00352)
+  reducing the fragment count further. This addresses exactly the two instances where
+  the margin here is thinnest, and would move them from an emission win back to a
+  routing win.
+- **Free fermions in disguise.** [Elman, Chapman and
+  Flammia](https://arxiv.org/abs/2012.07857) show that a Hamiltonian whose frustration
+  graph is (even-hole, claw)-free and contains a simplicial clique has a free-fermion
+  solution even when no Jordan-Wigner transformation finds one. The frustration graph
+  is `anticommutation_matrix`, already computed on every route — but the test is graph
+  theory, not classification, so PauLie reports these models as exponential and the
+  exact branch never sees them.
+
+Beyond that, in measured order of value:
 
 - **Cluster count on dense instances.** Chemistry gives 17 commuting clusters where
   spin models give three, so a step pays 17 basis changes. Better colouring, or kernels
@@ -188,5 +211,6 @@ Beyond emission, in measured order of value:
 - Kivlichan et al., [Quantum simulation with linear depth](https://doi.org/10.1103/PhysRevLett.120.110501) — the Givens emission
 - Chen et al., [PHOENIX](https://arxiv.org/abs/2504.03529) — global Pauli-IR optimization, compared against
 - Goubault de Brugière & Martiel, [Rustiq](https://arxiv.org/abs/2404.03280) — the Pauli-network synthesis Qiskit ships
+- Elman, Chapman & Flammia, [Free fermions behind the disguise](https://arxiv.org/abs/2012.07857) — solvability from the frustration graph
 - Sawaya et al., [HamLib](https://arxiv.org/abs/2306.13126) — the instances
 - Meckes, [The Random Matrix Theory of the Classical Compact Groups](https://doi.org/10.1017/9781108303453) — the namesake
