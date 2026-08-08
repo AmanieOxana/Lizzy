@@ -13,6 +13,8 @@
     faith.
 """
 
+import itertools
+
 import numpy as np
 from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
@@ -164,8 +166,7 @@ def compile_kernel(
 
     commuting = all(
         a.commutes_with(b)
-        for x, (_, a) in enumerate(kernel)
-        for _, b in (kernel[y] for y in range(x + 1, len(kernel)))
+        for (_, a), (_, b) in itertools.combinations(kernel, 2)
     )
     if commuting:
         circuit = Circuit()

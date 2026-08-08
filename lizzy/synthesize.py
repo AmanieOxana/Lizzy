@@ -194,6 +194,7 @@ def _synthesize_part(
     embed this generator set -- and a failed candidate simply drops out.
     """
     candidates: list[tuple[int, object]] = []
+    clusters = commuting_clusters(part)
 
     if exact.is_decomposable(part):
         try:
@@ -213,7 +214,7 @@ def _synthesize_part(
         if hybrid is not None:
             candidates.append(hybrid)
 
-    formula = _formula_plan(part, time, error, calibration, steps)
+    formula = _formula_plan(part, clusters, time, error, calibration, steps)
     if formula is not None:
         candidates.append(formula)
     if steps is None:
@@ -241,7 +242,7 @@ def _synthesize_part(
     # Folding is applied to what is emitted, not to the one step a plan is priced
     # from, so a plan's price is an upper bound on the circuit it produces.
     result.circuit.extend(fold_phases(plan() if callable(plan) else plan))
-    result.clusters = max(result.clusters, len(commuting_clusters(part)))
+    result.clusters = max(result.clusters, len(clusters))
 
 
 def _hybrid_plan(free, rest, time, error, calibration, steps):
@@ -271,7 +272,7 @@ def _hybrid_plan(free, rest, time, error, calibration, steps):
     )
 
 
-def _formula_plan(part, time, error, calibration, steps):
+def _formula_plan(part, commuting, time, error, calibration, steps):
     """Price the second-order formula under each applicable ordering.
 
     Letter clusters emit plain rotations; pair-kernel layers emit through the exact
@@ -279,11 +280,15 @@ def _formula_plan(part, time, error, calibration, steps):
     where an instance has no structure to group and a downstream Pauli-network
     emission would rather see the terms as given. Each is priced from one built step,
     with its own error constant, and the cheapest stands.
+
+    The commuting clusters are passed in rather than found here: the caller reports
+    their count either way, and the colouring is not free on a Hamiltonian with
+    hundreds of terms.
     """
     term_order = [hamiltonian([(str(pauli), c)]) for c, pauli in terms_of(part)]
     plans = []
     for clusters, builder, regroup in (
-        (commuting_clusters(part), None, True),
+        (commuting, None, True),
         (pair_clusters(part), compile_layer, True),
         (term_order, None, False),
     ):
@@ -328,23 +333,3 @@ def _chain_plan(part, time, error, order, calibration):
         steps * emission_cost(one_step, n_qubits(part)),
         lambda: trotter.product_formula(part, time, steps, order, route="trotter"),
     )
-
-
-"""
-    The top-level route: classify, reduce, and take the cheapest exact way out.
-
-    Nothing here decides anything the classification cannot justify. Each step either
-    removes work exactly -- summand splitting, the free part -- or sizes a product
-    formula from a bound it can defend. The sampled branch is the exception and is off
-    by default; see :func:`synthesize`.
-"""
-
-from dataclasses import dataclass, field
-
-from paulie.common.pauli_string_linear import PauliStringLinear
-
-from lizzy.hamiltonian import Circuit
-
-# What an exact-branch attempt can raise when the classification admits an algebra but
-# the upstream irrep machinery cannot realize this particular generator set in it.
-_EXACT_FAILURES = (StopIteration, NotImplementedError, ValueError)

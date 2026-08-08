@@ -215,8 +215,7 @@ def hamlib_table(steps: int = 2, time_: float = 1.0) -> None:
             best, emission = shared, "+frame"
         row = (
             f"{label:16}{width:>5}{len(terms_of(h)):>7}{best:>9,}"
-            f"{qiskit_cx(h, width, time_, steps):>9,}"
-            f"{qiskit_cx(h, width, time_, steps, rustiq=True):>9,}"
+            f"{qiskit_best(h, width, time_, steps):>9,}"
             f"{tket_cx(h, width, time_, steps):>9,}"
         )
         print(row + f"  {','.join(ours.routes)}{emission}", flush=True)

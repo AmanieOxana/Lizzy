@@ -98,7 +98,9 @@ def find_assignment(source: np.ndarray, target: np.ndarray, width: int, budget: 
         width (int): Number of qubits.
         budget (int): Maximum candidate placements to try.
     Returns:
-        list[int] | None: For each source row, the target row it maps to, or None.
+        tuple | None: The target row each source row maps to, and the independent
+        source rows the map was fixed on -- the caller needs both and finding them
+        again costs a rank computation per row.
     """
     chosen, coordinates = independent_rows(source)
     source, target = source % 2, target % 2
@@ -141,7 +143,7 @@ def find_assignment(source: np.ndarray, target: np.ndarray, width: int, budget: 
     if picked is None:
         return None
     images = (coordinates @ target[picked]) % 2
-    return [lookup[tuple(row)] for row in images]
+    return [lookup[tuple(row)] for row in images], chosen
 
 
 def outside_span(vectors: np.ndarray, size: int):
@@ -243,12 +245,12 @@ def clifford_to(hamiltonian_: PauliStringLinear, reference: PauliStringLinear):
         return None
     width = source.shape[1] // 2
 
-    assignment = find_assignment(source, target, width)
-    if assignment is None:
+    found = find_assignment(source, target, width)
+    if found is None:
         return None
+    assignment, chosen = found
 
     images = np.array([target[assignment[i]] for i in range(source.shape[0])])
-    chosen, _ = independent_rows(source)
     try:
         return witt_extend([source[i] for i in chosen], [images[i] for i in chosen], width)
     except ValueError:

@@ -143,42 +143,20 @@ class Circuit:
         self.rotations.extend(other.rotations)
         self.provenance.extend(other.provenance)
 
-    @property
-    def two_qubit_gates(self) -> int:
-        r"""int: Total two-qubit gate count, the quantity being minimized.
+    def blocks(self):
+        r"""
+        Walk the circuit as the blocks its gate count is charged in.
 
-        Counted block-aware: a maximal run of consecutive rotations whose joint
-        support fits on one qubit pair compiles as a single canonical two-qubit
-        block, which costs at most three CNOTs however many rotations it holds
-        (Kernpiler's partial-Trotterization observation, arXiv:2504.07214). Runs
-        that a pair cannot hold are charged their CNOT ladders.
+        A maximal run of consecutive rotations whose joint support fits on one qubit
+        pair compiles as a single canonical two-qubit block, which costs at most three
+        CNOTs however many rotations it holds (Kernpiler's partial-Trotterization
+        observation, arXiv:2504.07214). Runs that a pair cannot hold are charged their
+        CNOT ladders. A run spanning routes is attributed to the route that started
+        it, which is what makes the per-route costs sum to the total.
+
+        Yields:
+            tuple[str, int]: Route label and two-qubit gate count, one per block.
         """
-        total = 0
-        run_cost = 0
-        run_support: frozenset[int] = frozenset()
-        for pauli, _ in self.rotations:
-            support = frozenset(pauli.get_support())
-            joined = run_support | support
-            if len(joined) <= 2:
-                run_support = joined
-                run_cost += rotation_cost(pauli)
-            else:
-                total += _block_charge(run_support, run_cost)
-                run_support, run_cost = support, rotation_cost(pauli)
-        return total + _block_charge(run_support, run_cost)
-
-    def cost_by_route(self) -> dict[str, int]:
-        """
-        Get the two-qubit gate count attributed to each route.
-
-        Uses the same block-aware count as :attr:`two_qubit_gates`; a run spanning
-        routes is attributed to the route that started it, so the values sum to the
-        total.
-
-        Returns:
-            dict[str, int]: Route label to two-qubit gate count.
-        """
-        costs: dict[str, int] = {}
         run_cost = 0
         run_route: str | None = None
         run_support: frozenset[int] = frozenset()
@@ -190,12 +168,30 @@ class Circuit:
                 run_cost += rotation_cost(pauli)
             else:
                 if run_route is not None:
-                    costs[run_route] = costs.get(run_route, 0) + _block_charge(
-                        run_support, run_cost
-                    )
+                    yield run_route, _block_charge(run_support, run_cost)
                 run_support, run_cost, run_route = support, rotation_cost(pauli), route
         if run_route is not None:
-            costs[run_route] = costs.get(run_route, 0) + _block_charge(run_support, run_cost)
+            yield run_route, _block_charge(run_support, run_cost)
+
+    @property
+    def two_qubit_gates(self) -> int:
+        """int: Total two-qubit gate count, the quantity being minimized.
+
+        Counted block-aware; see :meth:`blocks`.
+        """
+        return sum(charge for _, charge in self.blocks())
+
+    def cost_by_route(self) -> dict[str, int]:
+        """
+        Get the two-qubit gate count attributed to each route.
+
+        Returns:
+            dict[str, int]: Route label to two-qubit gate count, summing to
+            :attr:`two_qubit_gates`.
+        """
+        costs: dict[str, int] = {}
+        for route, charge in self.blocks():
+            costs[route] = costs.get(route, 0) + charge
         return costs
 
     def __len__(self) -> int:

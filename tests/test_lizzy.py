@@ -246,8 +246,9 @@ def test_matching_must_respect_algebraic_dependencies() -> None:
     source, target = pauli_vectors(bk), pauli_vectors(jw)
     width = source.shape[1] // 2
 
-    assignment = find_assignment(source, target, width)
-    assert assignment is not None
+    found = find_assignment(source, target, width)
+    assert found is not None
+    assignment, _ = found
     assert sorted(assignment) == list(range(source.shape[0]))  # a bijection
 
     matrix = clifford_to(bk, jw)

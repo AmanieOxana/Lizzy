@@ -111,17 +111,3 @@ def solve(matrix: np.ndarray, target: np.ndarray):
             vector[column] = augmented[index, free]
         null.append(vector)
     return particular, null
-
-
-def null_rows(matrix: np.ndarray) -> np.ndarray:
-    """
-    Get the row combinations that vanish: the algebraic dependencies.
-
-    Args:
-        matrix (numpy.ndarray): Bit vectors, one per row.
-    Returns:
-        numpy.ndarray: Each row is a set of input rows summing to zero.
-    """
-    rows, columns = matrix.shape
-    augmented = np.hstack([matrix % 2, np.eye(rows, dtype=np.int64)])
-    return augmented[len(_eliminate(augmented, columns)):, columns:]

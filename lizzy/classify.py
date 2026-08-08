@@ -80,10 +80,13 @@ def summands(hamiltonian: PauliStringLinear) -> list[PauliStringLinear]:
         grouped.setdefault(int(label), []).append(
             (terms[index][0], str(terms[index][1]))
         )
-    parts = [
-        # Sorted twice over: a benchmark that reports gate counts has to produce the
-        # same ones on every run.
-        PauliStringLinear(sorted(group, key=lambda t: t[1]))
-        for group in grouped.values()
-    ]
-    return sorted(parts, key=lambda part: (-len(part), str(part)))
+    # Sorted twice over: a benchmark that reports gate counts has to produce the same
+    # ones on every run. Both orders are decided on the words, which are in hand here
+    # -- rendering each part as a string to compare parts costs more than the split
+    # itself on a six-hundred-term Hamiltonian, and the words already separate them,
+    # since a Pauli belongs to exactly one component.
+    ordered = sorted(
+        (sorted(group, key=lambda term: term[1]) for group in grouped.values()),
+        key=lambda group: (-len(group), [word for _, word in group]),
+    )
+    return [PauliStringLinear(group) for group in ordered]
