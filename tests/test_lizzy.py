@@ -10,6 +10,7 @@ import math
 
 import numpy as np
 import pytest
+from paulie.common.pauli_string_factory import get_pauli_string
 
 from lizzy.bench import calibrate
 from lizzy.classify import classify, is_fast_forwardable, summands
@@ -443,6 +444,46 @@ def test_pair_kernels_cost_less_than_their_ladders() -> None:
     step = cluster_formula(layers, 1.0, 1)
     ladders = sum(2 for p, _ in step.rotations)  # weight-2 terms, 2 CNOTs each
     assert step.two_qubit_gates < ladders
+
+
+def test_folding_keeps_each_rotation_with_its_own_route() -> None:
+    """Merging shortens the circuit, so a route label indexed by the output position
+    slides onto the wrong rotation and the last one falls off the end entirely.
+
+    The count survives that -- the labels are a permutation of themselves -- which is
+    why the attribution has to be checked rather than the total.
+    """
+    from lizzy.hamiltonian import fold_phases
+
+    circuit = Circuit()
+    circuit.add(get_pauli_string("XXI"), 0.1, "first")
+    circuit.add(get_pauli_string("XXI"), 0.1, "first")  # merges into the one before
+    circuit.add(get_pauli_string("IZZ"), 0.3, "second")
+    circuit.add(get_pauli_string("ZII"), 0.4, "third")
+
+    folded = fold_phases(circuit)
+    assert [str(p) for p, _ in folded.rotations] == ["XXI", "IZZ", "ZII"]
+    assert folded.provenance == ["first", "second", "third"]
+
+
+def test_folding_merges_only_across_commuting_rotations() -> None:
+    """Two rotations about the same Pauli come together only when everything between
+    them commutes with it; a barrier keeps them apart, however far back the match is."""
+    from lizzy.hamiltonian import fold_phases
+
+    barred = Circuit()
+    barred.add(get_pauli_string("XX"), 0.3, "r")
+    barred.add(get_pauli_string("ZI"), 0.2, "r")  # anticommutes with XX
+    barred.add(get_pauli_string("XX"), 0.4, "r")
+    assert len(fold_phases(barred)) == 3
+
+    clear = Circuit()
+    clear.add(get_pauli_string("XX"), 0.3, "r")
+    clear.add(get_pauli_string("YY"), 0.2, "r")  # commutes with XX
+    clear.add(get_pauli_string("XX"), 0.4, "r")
+    folded = fold_phases(clear)
+    assert len(folded) == 2
+    assert folded.rotations[0][1] == pytest.approx(0.7)
 
 
 def test_shared_frame_emission_implements_the_same_unitary() -> None:

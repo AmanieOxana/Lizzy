@@ -216,6 +216,15 @@ def fold_phases(circuit: "Circuit", tolerance: float = 1e-12) -> "Circuit":
     the rotation is dropped; multiples of :math:`\pi` are kept, since those differ by
     a global phase this representation does not carry.
 
+    Written as a backward scan this is quadratic, and on a Trotter circuit of tens of
+    thousands of rotations it costs more than the synthesis that produced them. Two
+    facts make it near-linear instead. Only a rotation sharing a qubit can fail to
+    commute, so the barrier can be looked for among those alone; and the rotation to
+    merge with is the *last* one about the same Pauli, so the search can stop as soon
+    as it falls behind that one -- whatever lies further back cannot decide anything.
+    Both are bookkeeping over the same scan, and the result is the one the naive
+    version produces, rotation for rotation.
+
     Args:
         circuit (Circuit): The rotations.
         tolerance (float): Angle below which a rotation counts as the identity.
@@ -223,21 +232,42 @@ def fold_phases(circuit: "Circuit", tolerance: float = 1e-12) -> "Circuit":
         Circuit: An equivalent circuit, never longer.
     """
     kept: list[tuple[PauliString, float, str]] = []
-    for pauli, angle in zip(
-        [p for p, _ in circuit.rotations], [a for _, a in circuit.rotations]
-    ):
-        route = circuit.provenance[len(kept)] if len(kept) < len(circuit.provenance) else ""
-        merged = False
-        for index in range(len(kept) - 1, -1, -1):
-            other, other_angle, other_route = kept[index]
-            if str(other) == str(pauli):
-                kept[index] = (other, other_angle + angle, other_route)
-                merged = True
-                break
-            if not other.commutes_with(pauli):
-                break
-        if not merged:
-            kept.append((pauli, angle, route))
+    last_about: dict[str, int] = {}
+    touching: dict[int, list[int]] = {}
+
+    for index, (pauli, angle) in enumerate(circuit.rotations):
+        route = circuit.provenance[index] if index < len(circuit.provenance) else ""
+        word = str(pauli)
+        support = pauli.get_support()
+        target = last_about.get(word, -1)
+
+        # Nothing to merge with, or something between here and it fails to commute:
+        # either way this rotation stands on its own.
+        blocked = target < 0
+        if not blocked:
+            checked: set[int] = set()
+            for qubit in support:
+                for other in reversed(touching.get(qubit, ())):
+                    if other <= target:
+                        break
+                    if other in checked:
+                        continue
+                    checked.add(other)
+                    if not kept[other][0].commutes_with(pauli):
+                        blocked = True
+                        break
+                if blocked:
+                    break
+
+        if not blocked:
+            other, other_angle, other_route = kept[target]
+            kept[target] = (other, other_angle + angle, other_route)
+            continue
+
+        kept.append((pauli, angle, route))
+        last_about[word] = len(kept) - 1
+        for qubit in support:
+            touching.setdefault(qubit, []).append(len(kept) - 1)
 
     folded = Circuit()
     for pauli, angle, route in kept:
