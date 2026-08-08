@@ -13,6 +13,8 @@ import numpy as np
 from paulie.common.pauli_string_bitarray import PauliString
 from paulie.common.pauli_string_linear import PauliStringLinear
 
+from lizzy import gf2
+
 # Rotating about a Pauli string of weight w costs 2(w-1) two-qubit gates: a CNOT ladder
 # onto one qubit, the rotation, and the ladder back.
 TWO_QUBIT_COST_PER_WEIGHT = 2
@@ -34,29 +36,6 @@ def symplectic_vectors(paulis: list[PauliString]) -> np.ndarray:
     return np.hstack([x, z])
 
 
-def gram(vectors: np.ndarray) -> np.ndarray:
-    r"""
-    Get the symplectic Gram matrix of bit vectors: 1 where they anticommute.
-
-    One integer matrix product rather than :math:`L^{2}` pairwise tests -- the
-    difference between milliseconds and minutes once dense models reach thousands of
-    terms. Everything graph-shaped is built on this: summand splitting, clustering,
-    the commutator sums, and the frame matching.
-
-    Args:
-        vectors (numpy.ndarray): Bit vectors ``[x | z]``, one per row.
-    Returns:
-        numpy.ndarray: Symmetric 0/1 matrix with a zero diagonal.
-    """
-    if vectors.size == 0:
-        return np.zeros((vectors.shape[0], vectors.shape[0]), dtype=np.int64)
-    width = vectors.shape[1] // 2
-    x, z = vectors[:, :width], vectors[:, width:]
-    adjacency = (x @ z.T + z @ x.T) % 2
-    np.fill_diagonal(adjacency, 0)
-    return adjacency
-
-
 def anticommutation_matrix(paulis: list[PauliString]) -> np.ndarray:
     """
     Get the anticommutation adjacency of a list of Pauli strings.
@@ -67,7 +46,7 @@ def anticommutation_matrix(paulis: list[PauliString]) -> np.ndarray:
         numpy.ndarray: Symmetric 0/1 matrix; entry ``(a, b)`` is one iff they
         anticommute.
     """
-    return gram(symplectic_vectors(paulis))
+    return gf2.gram(symplectic_vectors(paulis))
 
 
 def terms_of(hamiltonian: PauliStringLinear) -> list[tuple[complex, PauliString]]:

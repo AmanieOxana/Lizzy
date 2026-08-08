@@ -23,10 +23,10 @@ from lizzy.frame import (
     pauli_vectors,
     witt_extend,
 )
+from lizzy.gf2 import gram
 from lizzy.hamiltonian import (
     Circuit,
     anticommutation_matrix,
-    gram,
     hamiltonian,
     model,
     n_qubits,

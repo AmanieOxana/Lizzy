@@ -14,6 +14,7 @@ from paulie.common.pauli_string_collection import PauliStringCollection
 from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 
+from lizzy.gf2 import inverse, rank
 from lizzy.hamiltonian import anticommutation_matrix, hamiltonian, terms_of
 
 
@@ -161,47 +162,16 @@ def _single_qubit_partners(symmetries, width):
         if qubit in used or len(chosen) == count:
             continue
         trial = np.vstack([matrix, pattern])
-        if _gf2_rank(trial) > len(chosen):
+        if rank(trial) > len(chosen):
             matrix, chosen = trial, chosen + [(qubit, pauli)]
             used.add(qubit)
     if len(chosen) < count:
         return None
 
-    inverse = _gf2_inverse(matrix)
-    if inverse is None:
+    change = inverse(matrix)
+    if change is None:
         return None
-    return [p for _, p in chosen], [q for q, _ in chosen], inverse
-
-
-def _gf2_rank(matrix: np.ndarray) -> int:
-    """Rank of a 0/1 matrix over GF(2)."""
-    work = matrix.copy() % 2
-    rank = 0
-    for column in range(work.shape[1]):
-        pivot = next((r for r in range(rank, work.shape[0]) if work[r, column]), None)
-        if pivot is None:
-            continue
-        work[[rank, pivot]] = work[[pivot, rank]]
-        for row in range(work.shape[0]):
-            if row != rank and work[row, column]:
-                work[row] ^= work[rank]
-        rank += 1
-    return rank
-
-
-def _gf2_inverse(matrix: np.ndarray):
-    """Inverse of a square 0/1 matrix over GF(2), or None if singular."""
-    size = matrix.shape[0]
-    work = np.hstack([matrix % 2, np.eye(size, dtype=np.int64)])
-    for rank, column in enumerate(range(size)):
-        pivot = next((r for r in range(rank, size) if work[r, column]), None)
-        if pivot is None:
-            return None
-        work[[rank, pivot]] = work[[pivot, rank]]
-        for row in range(size):
-            if row != rank and work[row, column]:
-                work[row] ^= work[rank]
-    return work[:, size:]
+    return [p for _, p in chosen], [q for q, _ in chosen], change
 
 
 def _conjugate(coefficient, pauli, charge, partner):

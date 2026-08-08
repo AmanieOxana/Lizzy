@@ -45,6 +45,19 @@ Pricing emission inside the routing decision is what makes the `terms` candidate
 having: ungrouped it emits badly as ladders, but a shared frame would rather see the
 sequence as given, and that combination takes the largest chemistry instances.
 
+`lizzy.frame` moves a Hamiltonian to a better Pauli representation before compiling.
+The representation is a choice and it decides whether the exact tools apply at all:
+the same Fermi-Hubbard model is fully two-local under Jordan-Wigner and 58% two-local
+under Bravyi-Kitaev. PauLie classifies both as `4*so(6)`, one algebra, so the better
+form is Clifford-reachable rather than lost. Following
+[Aguilar et al.](https://arxiv.org/abs/2408.00081), Clifford equivalence needs a shared
+anticommutation graph *and* shared algebraic dependencies — matching on the graph alone
+leaves dependent generators unplaceable — and with both respected Witt's theorem turns
+the isometry into a symplectic map. Handed the Bravyi-Kitaev form, the frame recovers
+the Jordan-Wigner cost exactly: 24, 52 and 72 gates at 4, 6 and 8 qubits against 42,
+124 and 156, spectrum preserved to 1e-14. The published alternative
+[anneals on Pauli weight](https://arxiv.org/abs/2502.11933) for 15–40%.
+
 `symmetry.taper` removes one qubit per commuting conserved charge, rotating each onto
 a single-qubit Pauli and fixing its eigenvalue
 ([Bravyi et al.](https://arxiv.org/abs/1701.08213)). It is a problem reduction rather
@@ -164,102 +177,49 @@ Needs [kak-tools](https://github.com/QPauLie/kak-tools) with
 
 ## Outlook
 
-**Price more backends rather than write more emissions.** The last two rows of the
-table were won this way: the routing tier had no structure to find in a 630-term
-molecule, so the term-order candidate and the shared-frame emission decided them
-between themselves. Emission is a tier with two entries today; nothing in the design
-is limited to two. Rustiq (shipped inside Qiskit) is a third and beats the ladder on
-high-weight sequences; a native frame-conjugated emission would be a fourth, and would
-remove the pytket dependency for the rows that currently need it. Each backend is a
-function from a rotation sequence to a gate count, each is verifiable against a dense
-reference at small width, and `emission_cost` already takes a minimum — so adding one
-is strictly monotone: it can only be chosen where it wins.
+**A reference representation derived from the classification.** `lizzy.frame` needs a
+target to move towards, and today that target is supplied. The classification already
+names the canonical graph — PauLie's types A/B1/B2/B3 *are* the canonical forms of
+[Aguilar et al.](https://arxiv.org/abs/2408.00081), and its tracked canonicalizer
+records the contractions — so constructing the target from the classification alone is
+reachable, and is what would make the frame apply to a Hamiltonian arriving without a
+better twin.
 
-Optional imports are therefore not a weakness to engineer away. They are how a small
-compiler stays best-in-class on instance families it was never specialised for. The
-work is keeping the interface narrow — sequence in, verified circuit out — so a new
-backend costs a function rather than an architecture.
+**More emission backends, priced rather than written.** Emission is a tier with two
+entries and nothing limits it to two: Rustiq (inside Qiskit) is a third, a native
+frame-conjugated emission a fourth. Each is a function from a rotation sequence to a
+gate count, verifiable densely at small width, and `emission_cost` already takes a
+minimum — so adding one is strictly monotone, chosen only where it wins. Optional
+imports are how a small compiler stays competitive on families it was never
+specialised for; the work is keeping the interface narrow.
 
-**Close the gap at weight two.** The measurement above localises where this compiler
-stops having its own answer, and two techniques sit squarely in it. A *parity network* would
-synthesize a commuting diagonal Hamiltonian as one shared CNOT tree rather than a
-ladder per term — maxcut is fully commuting, weight two, and still costs 400 gates here
-against pytket's 323, which is exactly that gap. It is narrow but real: it applies
-wherever a cluster is diagonal, which every clustering produces.
+**Parity networks for diagonal clusters.** A commuting diagonal Hamiltonian should be
+one shared CNOT tree, not a ladder per term. maxcut is fully commuting, weight two, and
+still costs 400 gates against pytket's 323 — that gap exactly. Narrow but real, since
+every clustering produces diagonal clusters.
 
-Widening the kernels is *not* the other half, and the arithmetic says so plainly. A
-general three-qubit unitary costs around twenty CNOTs, so a three-qubit kernel only
-pays where more than about five terms share the same triple. On LiH, 509 of 630 terms
-have weight above three and would not fit such a kernel at all, and the ones that do
-share a triple 2.9 times on average. Wider still is worse: holding a weight-six term
-needs a six-qubit kernel at O(4^6) gates. Above weight two there is no exact structure
-to widen into — which is why the honest options are to change the representation, as
-double factorization does below, or to let the emission tier carry it.
+**Fast-forwardable fragments.** The exact route fires when the whole algebra is
+`so(m)`; the chemistry literature generalizes this to splitting a Hamiltonian into
+fragments each implementable for any time at precision-independent cost. Double
+factorization is the affordable one: the two-electron tensor has low rank, so a
+molecular Hamiltonian decomposes into O(N) free-fermionic fragments, each a target for
+the Givens route. The decomposition is an O(N^6) eigendecomposition, routine at these
+sizes and implemented in [ffsim](https://github.com/qiskit-community/ffsim); the
+obstacle is input rather than cost, since it needs fermionic tensors and a Pauli
+Hamiltonian yields those only with its encoding known.
 
-**Choose the representation, do not accept it.** The Pauli form of a Hamiltonian is a
-choice, and it decides whether the exact tools apply at all: the same Fermi-Hubbard
-model is fully two-local under Jordan-Wigner and 58% two-local under Bravyi-Kitaev,
-1 176 gates against 3 640. PauLie classifies both as `4*so(6)` — one algebra, so the
-better representation is Clifford-reachable, not lost.
+Also open, in measured order of value: applying tapering automatically once a sector is
+specified; the 17 commuting clusters chemistry produces against three for spin models;
+symmetry protection, a no-op where terms conserve the charges individually and untested
+where they do not; and vectorizing the commutator walk, which exhausts its budget on
+all-to-all models around n=24.
 
-`lizzy.frame` constructs that Clifford. Following
-[Aguilar et al.](https://arxiv.org/abs/2408.00081), Clifford equivalence needs a shared
-anticommutation graph *and* shared algebraic dependencies; matching on the graph alone
-leaves dependent generators unplaceable and the linear map fails on exactly those.
-With both respected, Witt's theorem turns the isometry into a symplectic map, and
-tracking the phases makes it a signed transformation of the Hamiltonian.
-
-It works end to end. Handed the Bravyi-Kitaev form, the frame moves it and compiling
-the result costs what the Jordan-Wigner form costs — 24, 52 and 72 gates at 4, 6 and 8
-qubits, against 42, 124 and 156 before, spectrum preserved to 1e-14. For scale, the
-published alternative [anneals on Pauli weight](https://arxiv.org/abs/2502.11933) for
-15–40%.
-
-What is still supplied rather than derived is the reference representation. The
-classification names the canonical graph — PauLie's types A/B1/B2/B3 *are* the
-theorem's canonical forms, and its tracked canonicalizer already records the
-contractions — so constructing a target from the classification alone is reachable,
-and is what would make this apply to a Hamiltonian arriving without a better twin.
-
-**Widen what counts as exactly compilable.** The exact route fires when the whole
-algebra is `so(m)`, and `free_part` finds one exactly-compilable subset when it does
-not. The chemistry literature generalizes this: split a Hamiltonian into
-*fast-forwardable fragments*, each implementable for any time at a cost independent of
-precision. Two structures are within reach and both belong to the routing tier, where
-this compiler's knowledge already lives:
-
-- **Double factorization** — affordable, and the more promising of the two. The
-  two-electron tensor has low rank, so a molecular Hamiltonian decomposes into O(N)
-  fragments that are each free-fermionic: each one a target for the Givens route
-  rather than for a product formula. The decomposition is an O(N^6) classical
-  eigendecomposition, routine in quantum chemistry at the sizes here, and implemented
-  in [ffsim](https://github.com/qiskit-community/ffsim) and Qiskit with
-  [symmetry-compressed variants](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00352).
-  The obstacle is not cost but input: it needs the fermionic one- and two-body tensors,
-  which a Pauli Hamiltonian only yields if its encoding is known. HamLib names the
-  encoding in the instance key; in general it has to be supplied.
-- **Free fermions in disguise** — cheap to rule out, infeasible to confirm.
-  [Elman, Chapman and Flammia](https://arxiv.org/abs/2012.07857) show that a
-  Hamiltonian whose frustration graph is (even-hole, claw)-free with a simplicial
-  clique has a free-fermion solution even when no Jordan-Wigner transformation finds
-  one, and the frustration graph is `anticommutation_matrix`, already built on every
-  route. But recognizing even-hole-free graphs is O(n^9) at best after a long line of
-  improvements from O(n^40); at 630 terms that is not a computation anyone runs.
-  Claw-freeness alone costs O(n·d^3) and is a sound *necessary* screen — instant on
-  these instances, and correctly separating tfim (claw-free, and indeed
-  free-fermionic) from heisenberg and H2 (both clawed). It can therefore rule the
-  structure out, never in.
-
-Beyond that, in measured order of value:
-
-- **Cluster count on dense instances.** Chemistry gives 17 commuting clusters where
-  spin models give three, so a step pays 17 basis changes. Better colouring, or kernels
-  on larger supports, attacks the term the formula actually spends.
-- **Symmetry protection.** A no-op for models whose terms conserve the charges
-  individually; untested where terms violate them — gauge theories, chemistry.
-- **Dense bounds past ~20 qubits.** The collected commutator walk exhausts its budget
-  on all-to-all models around n=24. Vectorizing it extends the certified regime, though
-  the circuits out there run to 10^8 gates.
+**Measured and rejected.** Widening the kernels past two qubits: a general three-qubit
+unitary costs about twenty CNOTs, so such a kernel pays only where five or more terms
+share a triple, while on LiH 509 of 630 terms are too wide to fit one at all and those
+that fit share a triple 2.9 times. Recognizing free-fermions-in-disguise: the
+frustration graph is already built, but even-hole-free recognition is O(n^9) at best,
+so the condition can be ruled out by the cheap claw-free half and never ruled in.
 
 ## References
 

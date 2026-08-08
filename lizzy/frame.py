@@ -27,21 +27,8 @@
 import numpy as np
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy.hamiltonian import gram, symplectic_vectors, terms_of
-
-
-def symplectic_product(left: np.ndarray, right: np.ndarray, width: int) -> int:
-    r"""
-    Get the symplectic form of two Pauli bit vectors: 1 iff they anticommute.
-
-    Args:
-        left (numpy.ndarray): Bit vector ``[x | z]``.
-        right (numpy.ndarray): Bit vector ``[x | z]``.
-        width (int): Number of qubits.
-    Returns:
-        int: 0 or 1.
-    """
-    return int(left[:width] @ right[width:] + left[width:] @ right[:width]) % 2
+from lizzy.gf2 import gram, inverse, rank, solve
+from lizzy.hamiltonian import symplectic_vectors, terms_of
 
 
 def pauli_vectors(hamiltonian_: PauliStringLinear) -> np.ndarray:
@@ -54,72 +41,6 @@ def pauli_vectors(hamiltonian_: PauliStringLinear) -> np.ndarray:
         numpy.ndarray: Integer array of shape ``(terms, 2 * qubits)``.
     """
     return symplectic_vectors([pauli for _, pauli in terms_of(hamiltonian_)])
-
-
-def _rank(matrix: np.ndarray) -> int:
-    """Rank over GF(2)."""
-    work = matrix.copy() % 2
-    rank = 0
-    for column in range(work.shape[1]):
-        pivot = next((r for r in range(rank, work.shape[0]) if work[r, column]), None)
-        if pivot is None:
-            continue
-        work[[rank, pivot]] = work[[pivot, rank]]
-        for row in range(work.shape[0]):
-            if row != rank and work[row, column]:
-                work[row] ^= work[rank]
-        rank += 1
-    return rank
-
-
-def _solve(matrix: np.ndarray, target: np.ndarray):
-    """Solve ``matrix @ x = target`` over GF(2); returns a solution and a null basis."""
-    rows, columns = matrix.shape
-    augmented = np.hstack([matrix % 2, target.reshape(-1, 1) % 2])
-    pivots, rank = [], 0
-    for column in range(columns):
-        pivot = next((r for r in range(rank, rows) if augmented[r, column]), None)
-        if pivot is None:
-            continue
-        augmented[[rank, pivot]] = augmented[[pivot, rank]]
-        for row in range(rows):
-            if row != rank and augmented[row, column]:
-                augmented[row] ^= augmented[rank]
-        pivots.append(column)
-        rank += 1
-    if any(
-        augmented[r, :columns].sum() == 0 and augmented[r, columns]
-        for r in range(rank, rows)
-    ):
-        return None, None
-
-    particular = np.zeros(columns, dtype=np.int64)
-    for index, column in enumerate(pivots):
-        particular[column] = augmented[index, columns]
-
-    null = []
-    for free in (c for c in range(columns) if c not in pivots):
-        vector = np.zeros(columns, dtype=np.int64)
-        vector[free] = 1
-        for index, column in enumerate(pivots):
-            vector[column] = augmented[index, free]
-        null.append(vector)
-    return particular, null
-
-
-def _inverse(matrix: np.ndarray) -> np.ndarray:
-    """Inverse of a square GF(2) matrix."""
-    size = matrix.shape[0]
-    work = np.hstack([matrix % 2, np.eye(size, dtype=np.int64)])
-    for rank in range(size):
-        pivot = next((r for r in range(rank, size) if work[r, rank]), None)
-        if pivot is None:
-            raise ValueError("The matrix is singular over GF(2).")
-        work[[rank, pivot]] = work[[pivot, rank]]
-        for row in range(size):
-            if row != rank and work[row, rank]:
-                work[row] ^= work[rank]
-    return work[:, size:]
 
 
 def is_symplectic(matrix: np.ndarray, width: int) -> bool:
@@ -150,13 +71,13 @@ def independent_rows(vectors: np.ndarray) -> tuple[list[int], np.ndarray]:
     chosen: list[int] = []
     for index in range(vectors.shape[0]):
         trial = np.vstack([vectors[chosen], vectors[index]]) % 2 if chosen else vectors[index : index + 1] % 2
-        if _rank(trial) > len(chosen):
+        if rank(trial) > len(chosen):
             chosen.append(index)
 
     basis = vectors[chosen] % 2
     coordinates = np.zeros((vectors.shape[0], len(chosen)), dtype=np.int64)
     for index in range(vectors.shape[0]):
-        solution, _ = _solve(basis.T, vectors[index] % 2)
+        solution, _ = solve(basis.T, vectors[index] % 2)
         coordinates[index] = solution
     return chosen, coordinates
 
@@ -259,17 +180,17 @@ def witt_extend(source_basis: list[np.ndarray], target_basis: list[np.ndarray], 
 
     while len(source) < 2 * width:
         fresh = next(
-            (c for c in candidates() if _rank(np.array(source + [c])) > len(source)), None
+            (c for c in candidates() if rank(np.array(source + [c])) > len(source)), None
         )
         if fresh is None:
             raise ValueError("The source basis cannot be extended.")
 
         # The image must reproduce every symplectic product the new vector has.
-        wanted = np.array([symplectic_product(fresh, v, width) for v in source], dtype=np.int64)
+        wanted = gram(np.vstack([fresh, source]))[0, 1:]
         products = np.array(
             [np.concatenate([v[width:], v[:width]]) % 2 for v in target], dtype=np.int64
         )
-        particular, null = _solve(products, wanted)
+        particular, null = solve(products, wanted)
         if particular is None:
             raise ValueError("The matching is not an isometry, so it does not extend.")
 
@@ -279,7 +200,7 @@ def witt_extend(source_basis: list[np.ndarray], target_basis: list[np.ndarray], 
             for bit in range(len(null)):
                 if mask >> bit & 1:
                     trial = (trial ^ null[bit]) % 2
-            if _rank(np.array(target + [trial])) > len(target):
+            if rank(np.array(target + [trial])) > len(target):
                 image = trial
                 break
         if image is None:
@@ -287,7 +208,10 @@ def witt_extend(source_basis: list[np.ndarray], target_basis: list[np.ndarray], 
         source.append(fresh)
         target.append(image)
 
-    return (_inverse(np.array(source)) @ np.array(target)) % 2
+    inverted = inverse(np.array(source))
+    if inverted is None:
+        raise ValueError("The source basis is singular over GF(2).")
+    return (inverted @ np.array(target)) % 2
 
 
 def clifford_to(hamiltonian_: PauliStringLinear, reference: PauliStringLinear):
