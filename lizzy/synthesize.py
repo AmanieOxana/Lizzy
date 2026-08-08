@@ -203,7 +203,9 @@ def _synthesize_part(
             pass
 
     free, rest = exact.free_part(part)
-    if free is not None:
+    # An empty remainder means the free part is the whole summand, so the hybrid is
+    # the exact route wearing a different label; it is not a split and not a candidate.
+    if free is not None and terms_of(rest):
         try:
             hybrid = _hybrid_plan(free, rest, time, error, calibration, steps)
         except _EXACT_FAILURES:

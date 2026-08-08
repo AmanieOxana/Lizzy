@@ -27,7 +27,7 @@
 import numpy as np
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy.hamiltonian import terms_of
+from lizzy.hamiltonian import gram, symplectic_vectors, terms_of
 
 
 def symplectic_product(left: np.ndarray, right: np.ndarray, width: int) -> int:
@@ -53,13 +53,7 @@ def pauli_vectors(hamiltonian_: PauliStringLinear) -> np.ndarray:
     Returns:
         numpy.ndarray: Integer array of shape ``(terms, 2 * qubits)``.
     """
-    return np.array(
-        [
-            [int(b) for b in pauli.bits[::2]] + [int(b) for b in pauli.bits[1::2]]
-            for _, pauli in terms_of(hamiltonian_)
-        ],
-        dtype=np.int64,
-    )
+    return symplectic_vectors([pauli for _, pauli in terms_of(hamiltonian_)])
 
 
 def _rank(matrix: np.ndarray) -> int:
@@ -188,9 +182,11 @@ def find_assignment(source: np.ndarray, target: np.ndarray, width: int, budget: 
     chosen, coordinates = independent_rows(source)
     source, target = source % 2, target % 2
     lookup = {tuple(row): index for index, row in enumerate(target)}
-    gram = [
-        [symplectic_product(source[a], source[b], width) for b in chosen] for a in chosen
-    ]
+    # The Gram matrix of the chosen rows, from the same matrix product the rest of the
+    # compiler uses -- the matching needs exactly the anticommutation structure that is
+    # already computed everywhere else.
+    wanted = gram(source)[np.ix_(chosen, chosen)]
+    candidates = gram(target)
     remaining = [budget]
 
     def extend(position: int, picked: list[int]):
@@ -211,7 +207,7 @@ def find_assignment(source: np.ndarray, target: np.ndarray, width: int, budget: 
                 continue
             remaining[0] -= 1
             if any(
-                symplectic_product(target[candidate], target[picked[j]], width) != gram[position][j]
+                candidates[candidate, picked[j]] != wanted[position, j]
                 for j in range(position)
             ):
                 continue

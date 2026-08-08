@@ -18,15 +18,48 @@ from paulie.common.pauli_string_linear import PauliStringLinear
 TWO_QUBIT_COST_PER_WEIGHT = 2
 
 
-def anticommutation_matrix(paulis: list[PauliString]) -> np.ndarray:
-    r"""
-    Get the anticommutation adjacency of a list of Pauli strings.
+def symplectic_vectors(paulis: list[PauliString]) -> np.ndarray:
+    """
+    Get Pauli strings as symplectic bit vectors ``[x | z]``, one row each.
 
-    This is the symplectic Gram matrix over GF(2), so it is one integer matrix product
-    rather than :math:`L^{2}` pairwise tests -- the difference between milliseconds
-    and minutes once dense models reach thousands of terms. Everything graph-shaped
-    downstream (summand splitting, clustering, the pairwise commutator sum) is built
-    on it.
+    Args:
+        paulis (list[PauliString]): The Pauli strings.
+    Returns:
+        numpy.ndarray: Integer array of shape ``(len(paulis), 2 * qubits)``.
+    """
+    if not paulis:
+        return np.zeros((0, 0), dtype=np.int64)
+    x = np.array([[int(b) for b in p.bits[::2]] for p in paulis], dtype=np.int64)
+    z = np.array([[int(b) for b in p.bits[1::2]] for p in paulis], dtype=np.int64)
+    return np.hstack([x, z])
+
+
+def gram(vectors: np.ndarray) -> np.ndarray:
+    r"""
+    Get the symplectic Gram matrix of bit vectors: 1 where they anticommute.
+
+    One integer matrix product rather than :math:`L^{2}` pairwise tests -- the
+    difference between milliseconds and minutes once dense models reach thousands of
+    terms. Everything graph-shaped is built on this: summand splitting, clustering,
+    the commutator sums, and the frame matching.
+
+    Args:
+        vectors (numpy.ndarray): Bit vectors ``[x | z]``, one per row.
+    Returns:
+        numpy.ndarray: Symmetric 0/1 matrix with a zero diagonal.
+    """
+    if vectors.size == 0:
+        return np.zeros((vectors.shape[0], vectors.shape[0]), dtype=np.int64)
+    width = vectors.shape[1] // 2
+    x, z = vectors[:, :width], vectors[:, width:]
+    adjacency = (x @ z.T + z @ x.T) % 2
+    np.fill_diagonal(adjacency, 0)
+    return adjacency
+
+
+def anticommutation_matrix(paulis: list[PauliString]) -> np.ndarray:
+    """
+    Get the anticommutation adjacency of a list of Pauli strings.
 
     Args:
         paulis (list[PauliString]): The Pauli strings.
@@ -34,11 +67,7 @@ def anticommutation_matrix(paulis: list[PauliString]) -> np.ndarray:
         numpy.ndarray: Symmetric 0/1 matrix; entry ``(a, b)`` is one iff they
         anticommute.
     """
-    x = np.array([[int(b) for b in p.bits[::2]] for p in paulis], dtype=np.int64)
-    z = np.array([[int(b) for b in p.bits[1::2]] for p in paulis], dtype=np.int64)
-    adjacency = (x @ z.T + z @ x.T) % 2
-    np.fill_diagonal(adjacency, 0)
-    return adjacency
+    return gram(symplectic_vectors(paulis))
 
 
 def terms_of(hamiltonian: PauliStringLinear) -> list[tuple[complex, PauliString]]:

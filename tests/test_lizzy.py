@@ -25,10 +25,13 @@ from lizzy.frame import (
 )
 from lizzy.hamiltonian import (
     Circuit,
+    anticommutation_matrix,
+    gram,
     hamiltonian,
     model,
     n_qubits,
     rotation_cost,
+    symplectic_vectors,
     terms_of,
     weight,
 )
@@ -280,6 +283,22 @@ def test_the_frame_recovers_the_better_representation_cost(sites: int) -> None:
 
     assert after <= reference
     assert after < before
+
+
+def test_the_degenerate_hybrid_is_not_a_candidate() -> None:
+    """A free part that swallows the whole summand leaves no remainder to Trotterize,
+    so the hybrid would be the exact route relabelled. It must not be offered."""
+    h = model("tfim", 4, seed=0)
+    free, rest = free_part(h)
+    assert free is not None and not terms_of(rest)
+    assert synthesize(h, time=1.0, error=1e-3).routes == ["exact"]
+
+
+def test_gram_survives_an_empty_operator() -> None:
+    """Empty inputs reach the Gram matrix through the free-part split, and used to
+    raise from deep inside numpy rather than returning an empty adjacency."""
+    assert gram(symplectic_vectors([])).shape == (0, 0)
+    assert anticommutation_matrix([]).shape == (0, 0)
 
 
 def test_witt_extension_refuses_a_non_isometry() -> None:
