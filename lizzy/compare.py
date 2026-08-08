@@ -56,10 +56,11 @@ def _s2_sequence(hamiltonian_, time_, steps):
 
 
 def qiskit_cx(hamiltonian_, width, time_, steps, rustiq=False, level=3):
-    """Two-qubit count of Qiskit's Suzuki-2 synthesis, optionally through Rustiq.
+    """Two-qubit count of one Qiskit synthesis path, at ``optimization_level=3``.
 
-    Transpiled at ``optimization_level=3``, Qiskit's strongest setting: level 1 leaves
-    roughly a factor of two on the table and would flatter this compiler.
+    Level 3 is Qiskit's strongest setting; level 1 leaves roughly a factor of two on
+    the table and would flatter this compiler. Prefer :func:`qiskit_best`, which also
+    tries the Rustiq plugin.
     """
     from qiskit import QuantumCircuit, transpile
     from qiskit.circuit.library import PauliEvolutionGate
@@ -80,6 +81,27 @@ def qiskit_cx(hamiltonian_, width, time_, steps, rustiq=False, level=3):
         circuit = PassManager([HighLevelSynthesis(hls_config=config)]).run(circuit)
     transpiled = transpile(circuit, basis_gates=["cx", "u"], optimization_level=level)
     return transpiled.count_ops().get("cx", 0)
+
+
+def qiskit_best(hamiltonian_, width, time_, steps):
+    """Best two-qubit count Qiskit reaches, over its synthesis plugins.
+
+    The default Suzuki synthesis and the Rustiq Pauli-network plugin win on different
+    instances -- Rustiq on high-weight chemistry, the default everywhere else -- so
+    both run and the better stands, the same courtesy pytket gets from its passes.
+
+    Args:
+        hamiltonian_ (PauliStringLinear): The Hamiltonian.
+        width (int): Number of qubits.
+        time_ (float): Evolution time.
+        steps (int): Suzuki-2 step count.
+    Returns:
+        int: The lower of the two counts.
+    """
+    return min(
+        qiskit_cx(hamiltonian_, width, time_, steps),
+        qiskit_cx(hamiltonian_, width, time_, steps, rustiq=True),
+    )
 
 
 def tket_cx(hamiltonian_, width, time_, steps):
@@ -132,7 +154,7 @@ def oracle_table(error: float = 1e-3) -> None:
     from qiskit.quantum_info import Operator
 
     print(f"\nOracle for everyone, n=8, eps={error}, dense-verified")
-    print(f"{'model':22}{'t':>4}{'lizzy':>9}{'qiskit':>9}{'rustiq':>9}{'tket':>9}")
+    print(f"{'model':22}{'t':>4}{'lizzy':>9}{'qiskit':>9}{'tket':>9}")
     for name, time_ in ORACLE_CASES:
         h = model(name, 8, seed=1)
         target = evolution(h, time_)
@@ -165,8 +187,7 @@ def oracle_table(error: float = 1e-3) -> None:
         steps = _bisect(qiskit_ok)
         row = (
             f"{name:22}{time_:>4.0f}{ours.two_qubit_gates:>9,}"
-            f"{qiskit_cx(h, 8, time_, steps):>9,}"
-            f"{qiskit_cx(h, 8, time_, steps, rustiq=True):>9,}"
+            f"{qiskit_best(h, 8, time_, steps):>9,}"
             f"{tket_cx(h, 8, time_, steps):>9,}"
         )
         print(row, flush=True)
@@ -177,7 +198,7 @@ def hamlib_table(steps: int = 2, time_: float = 1.0) -> None:
     from lizzy.emit import tket_two_qubit_gates
 
     print(f"\nHamLib, fixed steps={steps}, t={time_}")
-    print(f"{'instance':16}{'n':>5}{'terms':>7}{'lizzy':>9}{'qiskit':>9}{'rustiq':>9}{'tket':>9}  route")
+    print(f"{'instance':16}{'n':>5}{'terms':>7}{'lizzy':>9}{'qiskit':>9}{'tket':>9}  route")
     for label, archive, key in HAMLIB_CASES:
         try:
             h = load(fetch(archive), key)
