@@ -119,9 +119,18 @@ not predict it — seven of the nine wins have exponential DLAs, and two of the 
 losses are polynomial.
 
 Weight two is where the exact tools end. The Givens route needs the whole algebra to
-be `so(m)`; the kernels need every term to fit one qubit pair. Above that there is no
-structural tool left and the builtin emission falls back to a ladder per rotation,
-which is where a shared Clifford frame takes over.
+be `so(m)`; the kernels need every term to fit one qubit pair. Above that the builtin
+emission falls back to a ladder per rotation, at 2(w-1) gates each, where a shared
+frame stays near two regardless of weight — so the gap is the weight: 10.6 gates per
+rotation against 1.9 on LiH, 2.0 against 1.6 on maxcut.
+
+`lizzy.frame` closes that gap only where a lighter representation exists, and
+sometimes none does. Anticommutation degree is a Clifford invariant, and a weight-two
+Pauli can anticommute with at most the weight-two Paulis its two qubits touch — 195 of
+them on twelve qubits. LiH's terms reach degree 264, so no Clifford makes it two-local
+and its weight is a property of the algebra, not of the encoding. The same bound
+leaves Bravyi-Kitaev Fermi-Hubbard wide open at degree 8 of 1779, which is why the
+frame recovers the Jordan-Wigner cost there in full.
 
 At matched accuracy — eight qubits, every compiler given the fewest steps that reach
 1e-3 against a dense reference — Lizzy wins all six model/time combinations measured,
