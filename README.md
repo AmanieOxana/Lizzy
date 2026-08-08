@@ -193,11 +193,6 @@ minimum — so adding one is strictly monotone, chosen only where it wins. Optio
 imports are how a small compiler stays competitive on families it was never
 specialised for; the work is keeping the interface narrow.
 
-**Parity networks for diagonal clusters.** A commuting diagonal Hamiltonian should be
-one shared CNOT tree, not a ladder per term. maxcut is fully commuting, weight two, and
-still costs 400 gates against pytket's 323 — that gap exactly. Narrow but real, since
-every clustering produces diagonal clusters.
-
 **Fast-forwardable fragments.** The exact route fires when the whole algebra is
 `so(m)`; the chemistry literature generalizes this to splitting a Hamiltonian into
 fragments each implementable for any time at precision-independent cost. Double
@@ -214,7 +209,17 @@ symmetry protection, a no-op where terms conserve the charges individually and u
 where they do not; and vectorizing the commutator walk, which exhausts its budget on
 all-to-all models around n=24.
 
-**Measured and rejected.** Widening the kernels past two qubits: a general three-qubit
+**Measured and rejected.** Parity networks for diagonal clusters, which looked like
+the answer to maxcut: instead of a ladder per term, carry a linear map and pay only
+what separates one parity from the next. Built and dense-verified, the network needs
+294 CNOTs on maxcut against the ladder's 400 — but the map drifts far from the
+identity and restoring it costs 2 403, a cost the naive Gaussian elimination cannot
+avoid for a full-rank drift on 100 qubits. Constraining the drift gives the ladder back
+exactly. The restore is paid once and the network per step, so the break-even is 23
+Trotter steps; a fully commuting Hamiltonian needs one, which is precisely the worst
+case for amortizing it. Worth revisiting only for diagonal parts inside deep circuits.
+
+Widening the kernels past two qubits: a general three-qubit
 unitary costs about twenty CNOTs, so such a kernel pays only where five or more terms
 share a triple, while on LiH 509 of 630 terms are too wide to fit one at all and those
 that fit share a triple 2.9 times. Recognizing free-fermions-in-disguise: the
