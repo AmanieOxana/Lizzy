@@ -562,6 +562,25 @@ def test_free_part_declines_a_commuting_set() -> None:
     assert len(terms_of(rest)) == 3
 
 
+def test_a_commuting_answer_is_retried_rather_than_returned_as_none() -> None:
+    """Ordering families by weight can grow a set that is entirely commuting, which is
+    then discarded -- extracting it would remove no commutator from the bound -- so the
+    search reports nothing after doing all of the work.
+
+    Here the heavy Z family builds exactly that set, and holding it back until
+    something non-commuting has been found turns the answer from none into five of the
+    seven terms. This is the shape LiH has at six hundred terms.
+    """
+    terms = {"IIZI": 9.0, "ZIZI": 9.0, "ZIZZ": 9.0,
+             "IIYI": 1.0, "XYZI": 1.0, "YIII": 1.0, "ZIIZ": 1.0}
+
+    free, rest = free_part(hamiltonian(terms))
+    assert free is not None
+    assert anticommutation_matrix([p for _, p in terms_of(free)]).any()
+    assert all(is_decomposable(part) for part in summands(free))
+    assert len(terms_of(free)) + len(terms_of(rest)) == len(terms)
+
+
 # ---------------------------------------------------------------------------
 # Product formulas and sampling
 # ---------------------------------------------------------------------------

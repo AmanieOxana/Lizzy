@@ -226,6 +226,22 @@ def free_part(
     second pass then tops the set up with individual terms. Greedy growth cannot
     backtrack, so the ordering is what decides the answer.
 
+    Ordering by weight alone decides it badly on chemistry. The heaviest families there
+    are the diagonal ones, which commute with each other; the greedy takes them first,
+    and the set they build is large enough that every family which does *not* commute
+    then fails the classification. What comes out is a set of mutually commuting terms,
+    which is discarded at the end -- extracting it would remove no commutator from the
+    bound -- so the answer is no free part at all, after several hundred classifications
+    spent reaching it.
+
+    Only that outcome is worth a second attempt, and it gets one: the families that
+    leave the set commuting are held back and offered again once something
+    non-commuting has been found. Taking them early is not wrong in general -- it is
+    how the set grows largest, and their commutators with the rest of the free part do
+    leave the bound -- so the second ordering is used where the first has already
+    failed rather than in place of it. On LiH that is the difference between no free
+    part and a forty-four term one.
+
     Candidates are capped at ``8n`` terms before any classification runs. This is a
     search budget, not a theorem: what it protects against is spending minutes
     classifying a dense model's n^2-term families -- all-to-all XX+YY looks like
@@ -251,8 +267,46 @@ def free_part(
         families.values(), key=lambda f: -sum(abs(c) for c, _ in f)
     )
 
+    free = _grow(ordered, terms, budget, defer_abelian=False)
+    if not _is_non_abelian(free):
+        free = _grow(ordered, terms, budget, defer_abelian=True)
+
+    if len(free) < 2 or not _is_non_abelian(free):
+        # A set of mutually commuting terms contributes nothing to the Trotter error in
+        # the first place, so extracting it buys no accuracy and only adds a branch.
+        return None, hamiltonian_
+    taken = {pauli for _, pauli in free}
+    rest = [(c, p) for c, p in terms if p not in taken]
+    return _build(free), _build(rest)
+
+
+def _grow(
+    ordered: list[list[tuple[complex, str]]],
+    terms: list[tuple[complex, str]],
+    budget: int,
+    defer_abelian: bool,
+) -> list[tuple[complex, str]]:
+    """Grow a decomposable set greedily: whole families first, then single terms.
+
+    With ``defer_abelian`` a family that would leave the set mutually commuting is held
+    back and offered again at the end of the family pass, once something non-commuting
+    has been found for it to join. See :func:`free_part` for why that ordering is the
+    second one tried rather than the first.
+    """
     free: list[tuple[complex, str]] = []
+    deferred: list[list[tuple[complex, str]]] = []
+
     for family in ordered:
+        candidate = free + family
+        if not 2 <= len(candidate) <= budget:
+            continue
+        if defer_abelian and not _is_non_abelian(candidate):
+            deferred.append(family)
+            continue
+        if decomposes_by_summand(_build(candidate)):
+            free = candidate
+
+    for family in deferred:
         candidate = free + family
         if 2 <= len(candidate) <= budget and decomposes_by_summand(_build(candidate)):
             free = candidate
@@ -266,13 +320,7 @@ def free_part(
         if 2 <= len(candidate) <= budget and decomposes_by_summand(_build(candidate)):
             free = candidate
             taken.add(pauli)
-
-    if len(free) < 2 or not _is_non_abelian(free):
-        # A set of mutually commuting terms contributes nothing to the Trotter error in
-        # the first place, so extracting it buys no accuracy and only adds a branch.
-        return None, hamiltonian_
-    rest = [(c, p) for c, p in terms if p not in taken]
-    return _build(free), _build(rest)
+    return free
 
 
 def _is_non_abelian(terms: list[tuple[complex, str]]) -> bool:
