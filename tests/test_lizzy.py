@@ -6,6 +6,7 @@
     verifies itself only in its m-dimensional irrep, never at the qubit level.
 """
 
+import itertools
 import math
 
 import numpy as np
@@ -14,7 +15,13 @@ from paulie.common.pauli_string_factory import get_pauli_string
 
 from lizzy.bench import calibrate
 from lizzy.classify import classify, is_fast_forwardable, summands
-from lizzy.dense import circuit_matrix, evolution, infidelity, pauli_matrix
+from lizzy.dense import (
+    circuit_matrix,
+    evolution,
+    infidelity,
+    monomial_form,
+    pauli_matrix,
+)
 from lizzy.exact import decompose, free_part, is_decomposable
 from lizzy.frame import (
     clifford_to,
@@ -835,3 +842,29 @@ def test_pauli_matrix_matches_the_string() -> None:
     """The dense reference is only useful if it agrees with the Pauli convention."""
     assert np.allclose(pauli_matrix("IZ"), np.diag([1, -1, 1, -1]))
     assert np.allclose(pauli_matrix("XI"), np.kron(pauli_matrix("X"), np.eye(2)))
+
+
+@pytest.mark.parametrize("width", [1, 2, 3])
+def test_monomial_form_is_the_pauli_matrix(width: int) -> None:
+    """The reference replays rotations through the signed permutation rather than the
+    matrix, so that permutation has to be the matrix -- checked on every string."""
+    for letters in itertools.product("IXYZ", repeat=width):
+        word = "".join(letters)
+        rows, phases = monomial_form(word)
+        rebuilt = np.zeros((2**width, 2**width), dtype=complex)
+        rebuilt[rows, np.arange(2**width)] = phases
+        assert np.allclose(rebuilt, pauli_matrix(word)), word
+
+
+def test_circuit_matrix_agrees_with_a_general_exponential() -> None:
+    """The closed form is only a shortcut if it lands where scipy's expm does."""
+    from scipy.linalg import expm
+
+    circuit = Circuit()
+    for word, angle in (("XY", 0.7), ("ZZ", -1.3), ("IY", 2.9), ("XY", 0.4)):
+        circuit.add(get_pauli_string(word), angle, "r")
+
+    expected = np.eye(4, dtype=complex)
+    for pauli, angle in circuit.rotations:
+        expected = expm(-1j * angle * pauli_matrix(pauli)) @ expected
+    assert np.allclose(circuit_matrix(circuit, 2), expected)
