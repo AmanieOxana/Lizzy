@@ -97,10 +97,21 @@ def rotation_cost(pauli: PauliString) -> int:
     return TWO_QUBIT_COST_PER_WEIGHT * max(weight(pauli) - 1, 0)
 
 
-def _block_charge(support: frozenset, cost: int) -> int:
+def _block_charge(support: frozenset, cost: int, run: list) -> int:
     """Charge one run of rotations: a run held by a single qubit pair compiles as one
-    canonical block of at most three CNOTs; a wider run pays its ladders."""
-    return min(cost, 3) if len(support) <= 2 else cost
+    canonical block, priced by its canonical class; a wider run pays its ladders.
+
+    The import is local because the canonical form belongs to the two-qubit synthesis,
+    which is built on this module.
+    """
+    if len(support) > 2:
+        return cost
+    if len(support) < 2 or cost == 0:
+        return 0
+    from lizzy.kernels import canonical_cost
+
+    pair = tuple(sorted(support))
+    return min(cost, canonical_cost([(str(p), a) for p, a in run], pair))
 
 
 @dataclass
@@ -148,30 +159,35 @@ class Circuit:
         Walk the circuit as the blocks its gate count is charged in.
 
         A maximal run of consecutive rotations whose joint support fits on one qubit
-        pair compiles as a single canonical two-qubit block, which costs at most three
-        CNOTs however many rotations it holds (Kernpiler's partial-Trotterization
-        observation, arXiv:2504.07214). Runs that a pair cannot hold are charged their
-        CNOT ladders. A run spanning routes is attributed to the route that started
-        it, which is what makes the per-route costs sum to the total.
+        pair compiles as a single canonical two-qubit block, and is charged what that
+        block's canonical class costs -- at most three CNOTs however many rotations it
+        holds (Kernpiler's partial-Trotterization observation, arXiv:2504.07214), and
+        two where a canonical parameter is trivial. Runs that a pair cannot hold are
+        charged their CNOT ladders. A run spanning routes is attributed to the route
+        that started it, which is what makes the per-route costs sum to the total.
 
         Yields:
             tuple[str, int]: Route label and two-qubit gate count, one per block.
         """
+        run: list[tuple[PauliString, float]] = []
         run_cost = 0
         run_route: str | None = None
         run_support: frozenset[int] = frozenset()
-        for (pauli, _), route in zip(self.rotations, self.provenance):
+        for rotation, route in zip(self.rotations, self.provenance):
+            pauli = rotation[0]
             support = frozenset(pauli.get_support())
             joined = run_support | support
             if len(joined) <= 2 and run_route is not None:
                 run_support = joined
                 run_cost += rotation_cost(pauli)
+                run.append(rotation)
             else:
                 if run_route is not None:
-                    yield run_route, _block_charge(run_support, run_cost)
+                    yield run_route, _block_charge(run_support, run_cost, run)
                 run_support, run_cost, run_route = support, rotation_cost(pauli), route
+                run = [rotation]
         if run_route is not None:
-            yield run_route, _block_charge(run_support, run_cost)
+            yield run_route, _block_charge(run_support, run_cost, run)
 
     @property
     def two_qubit_gates(self) -> int:

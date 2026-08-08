@@ -90,6 +90,60 @@ def _orthogonal_diagonalization(w: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return basis, phases
 
 
+def _magic_form(unitary: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Get a two-qubit unitary in the magic basis, with its diagonalizing basis and
+    phases -- everything the canonical class is read off."""
+    v = _MAGIC.conj().T @ unitary @ _MAGIC
+    v = v / np.linalg.det(v) ** 0.25
+    basis, phases = _orthogonal_diagonalization(v.T @ v)
+    return v, basis, phases
+
+
+def _canonical_angles(phases: np.ndarray) -> np.ndarray:
+    """Read the XX/YY/ZZ angles off a magic-diagonal phase vector, by least squares
+    against the diagonals of XX, YY, ZZ and the global phase."""
+    return np.linalg.lstsq(_CANONICAL_DIAGONALS, phases / 2, rcond=None)[0][:3]
+
+
+def canonical_cost(rotations: list[tuple[str, float]], qubits: tuple[int, int]) -> int:
+    r"""
+    Get the two-qubit gate cost of a rotation sequence confined to one qubit pair.
+
+    Whatever the sequence is, it composes to one element of U(4), and what that costs
+    is decided by its canonical class alone: three CNOTs when all three canonical
+    parameters are non-trivial, two when at least one is, none when the element is
+    local. The parameters live modulo :math:`\pi/2`, where the canonical rotation is
+    itself a Clifford and folds into the single-qubit layer.
+
+    This is what makes the difference between charging a run and pricing it. A run of
+    two canonical rotations pays 2 rather than the 3 a flat cap charges -- an XY bond
+    is exactly that case -- and no sequence of interleaved local rotations can talk
+    its way below the class, which is where a count of distinct Pauli words would go
+    wrong: local rotations turn one interaction direction into another, so a single
+    two-qubit word can still reach all three parameters.
+
+    Args:
+        rotations (list): ``(word, angle)`` pairs, all supported on ``qubits``.
+        qubits (tuple[int, int]): The pair, in register order.
+    Returns:
+        int: Two-qubit gate count, at most three.
+    """
+    i, j = qubits
+    unitary = np.eye(4, dtype=complex)
+    for word, angle in rotations:
+        pauli = np.kron(_PAULI[word[i]], _PAULI[word[j]])
+        unitary = (np.cos(angle) * np.eye(4) - 1j * np.sin(angle) * pauli) @ unitary
+
+    angles = _canonical_angles(_magic_form(unitary)[2])
+    quarter = np.pi / 2
+    trivial = [
+        min(angle % quarter, quarter - angle % quarter) < 1e-9 for angle in angles
+    ]
+    if all(trivial):
+        return 0
+    return 2 if any(trivial) else 3
+
+
 def two_qubit_kak(unitary: np.ndarray, qubits: tuple[int, int], width: int) -> Circuit:
     """
     Decompose a two-qubit unitary into Pauli rotations on a wider register.
@@ -102,10 +156,7 @@ def two_qubit_kak(unitary: np.ndarray, qubits: tuple[int, int], width: int) -> C
         Circuit: Weight-one Euler rotations around one canonical XX/YY/ZZ block,
         equal to ``unitary`` up to global phase.
     """
-    v = _MAGIC.conj().T @ unitary @ _MAGIC
-    v = v / np.linalg.det(v) ** 0.25
-
-    basis, phases = _orthogonal_diagonalization(v.T @ v)
+    v, basis, phases = _magic_form(unitary)
     if np.linalg.det(basis) < 0:
         basis[:, 0] *= -1
     left = v @ basis @ np.diag(np.exp(-1j * phases / 2))
@@ -113,9 +164,7 @@ def two_qubit_kak(unitary: np.ndarray, qubits: tuple[int, int], width: int) -> C
         left[:, 0] *= -1
         phases[0] += 2 * np.pi
 
-    # Canonical angles from the magic-diagonal phases, least squares against the
-    # diagonals of XX, YY, ZZ and the global phase.
-    xyz = np.linalg.lstsq(_CANONICAL_DIAGONALS, phases / 2, rcond=None)[0][:3]
+    xyz = _canonical_angles(phases)
 
     def word(letter: str, qubit: int) -> str:
         return "".join(letter if k == qubit else "I" for k in range(width))

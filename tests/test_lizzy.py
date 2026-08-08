@@ -296,11 +296,14 @@ def test_the_frame_recovers_the_better_representation_cost(sites: int) -> None:
 
 def test_the_degenerate_hybrid_is_not_a_candidate() -> None:
     """A free part that swallows the whole summand leaves no remainder to Trotterize,
-    so the hybrid would be the exact route relabelled. It must not be offered."""
+    so the hybrid would be the exact route relabelled. It must not be offered --
+    whichever route then wins the pricing, and the cheapest here is not always the
+    exact one."""
     h = model("tfim", 4, seed=0)
     free, rest = free_part(h)
     assert free is not None and not terms_of(rest)
-    assert synthesize(h, time=1.0, error=1e-3).routes == ["exact"]
+    for error in (1e-3, 1e-10):
+        assert "exact-in-step" not in synthesize(h, time=1.0, error=error).routes
 
 
 def test_gram_survives_an_empty_operator() -> None:
@@ -441,6 +444,53 @@ def test_field_carrying_models_take_the_kernel_route(name: str) -> None:
 
     result = synthesize(h, time=1.0, error=1e-3, order=4, seed=0)
     assert infidelity(evolution(h, 1.0), circuit_matrix(result.circuit, 5)) < 1e-3
+
+
+def test_a_pair_block_is_charged_its_canonical_class() -> None:
+    """Three canonical parameters cost three CNOTs, fewer cost two, none costs none.
+    A flat cap at three is reachable but pessimistic, and the router prices with it."""
+    def block(*words):
+        circuit = Circuit()
+        for word in words:
+            circuit.add(get_pauli_string(word), 0.3, "k")
+        return circuit.two_qubit_gates
+
+    assert block("XX", "YY", "ZZ") == 3
+    assert block("XX", "YY") == 2      # an XY bond; the cap said three
+    assert block("XX") == 2
+    assert block("ZI", "IX") == 0      # local, whatever the angles
+
+
+def test_a_pair_block_charge_is_never_below_what_it_emits() -> None:
+    """The charge is what the compiler reports, so it may sit above what a backend
+    finds but never below -- a count nothing can emit is not a count.
+
+    Local rotations rotate one interaction direction into another, which is why the
+    class has to be computed: here a single two-qubit word reaches all three canonical
+    parameters, and a rule counting distinct words would charge two for a block that
+    genuinely needs three.
+    """
+    pytest.importorskip("pytket")
+    from pytket import OpType
+    from pytket.passes import AutoRebase, FullPeepholeOptimise
+
+    from lizzy.emit import pauli_boxes
+
+    runs = [
+        ["XX", "YY", "ZZ"],
+        ["XX", "YY"],
+        ["IZ", "ZX", "XZ", "XI", "IZ", "ZX", "XI", "XZ"],
+        ["ZX", "IY", "ZX", "XI", "ZX"],
+    ]
+    for words in runs:
+        circuit = Circuit()
+        for index, word in enumerate(words):
+            circuit.add(get_pauli_string(word), 0.3 + 0.11 * index, "k")
+        emitted = pauli_boxes(circuit.rotations, 2)
+        FullPeepholeOptimise().apply(emitted)
+        AutoRebase({OpType.CX, OpType.TK1}).apply(emitted)
+        assert circuit.two_qubit_gates >= emitted.n_gates_of_type(OpType.CX), words
+        assert infidelity(circuit_matrix(circuit, 2), emitted.get_unitary()) < 1e-9
 
 
 def test_pair_kernels_cost_less_than_their_ladders() -> None:
@@ -823,10 +873,16 @@ def test_qdrift_gate_count_ignores_the_term_count() -> None:
 @pytest.mark.parametrize("name", FAST_FORWARDABLE)
 @pytest.mark.parametrize("n", [3, 4])
 def test_synthesize_is_exact_where_the_algebra_allows(name: str, n: int) -> None:
-    """A fast-forwardable model must come out exact, at any time, to machine precision."""
+    """A fast-forwardable model must come out exact, at any time, to machine precision.
+
+    Asked at a budget a product formula could also meet, the router is entitled to a
+    cheaper approximate branch and takes it -- that is the arithmetic, not a lapse. So
+    the budget here is one only the exact branch reaches, which is where the claim
+    lives: fixed depth, machine precision, whatever the time.
+    """
     h = model(name, n, seed=1)
     for time in (0.5, 5.0):
-        result = synthesize(h, time=time, error=1e-3)
+        result = synthesize(h, time=time, error=1e-10)
         assert result.routes == ["exact"]
         assert infidelity(
             evolution(h, time), circuit_matrix(result.circuit, n)
