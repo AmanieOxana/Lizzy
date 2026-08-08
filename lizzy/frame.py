@@ -144,6 +144,28 @@ def find_assignment(source: np.ndarray, target: np.ndarray, width: int, budget: 
     return [lookup[tuple(row)] for row in images]
 
 
+def outside_span(vectors: np.ndarray, size: int):
+    """
+    Get a unit vector outside the span of the given rows, or None if they span all.
+
+    Args:
+        vectors (numpy.ndarray): Rows spanning a subspace; may be empty.
+        size (int): Dimension of the ambient space.
+    Returns:
+        numpy.ndarray | None: A standard basis vector not in the span.
+    """
+    have = rank(vectors) if vectors.size else 0
+    if have >= size:
+        return None
+    for index in range(size):
+        vector = np.zeros(size, dtype=np.int64)
+        vector[index] = 1
+        trial = np.vstack([vectors, vector]) if vectors.size else vector.reshape(1, -1)
+        if rank(trial) > have:
+            return vector
+    return None
+
+
 def witt_extend(source_basis: list[np.ndarray], target_basis: list[np.ndarray], width: int) -> np.ndarray:
     r"""
     Extend an isometry between subspaces to a symplectic map of the whole space.
@@ -167,21 +189,8 @@ def witt_extend(source_basis: list[np.ndarray], target_basis: list[np.ndarray], 
     source = [vector % 2 for vector in source_basis]
     target = [vector % 2 for vector in target_basis]
 
-    def candidates():
-        for i in range(2 * width):
-            vector = np.zeros(2 * width, dtype=np.int64)
-            vector[i] = 1
-            yield vector
-        for i in range(2 * width):
-            for j in range(i + 1, 2 * width):
-                vector = np.zeros(2 * width, dtype=np.int64)
-                vector[i] = vector[j] = 1
-                yield vector
-
     while len(source) < 2 * width:
-        fresh = next(
-            (c for c in candidates() if rank(np.array(source + [c])) > len(source)), None
-        )
+        fresh = outside_span(np.array(source), 2 * width)
         if fresh is None:
             raise ValueError("The source basis cannot be extended.")
 
@@ -194,15 +203,18 @@ def witt_extend(source_basis: list[np.ndarray], target_basis: list[np.ndarray], 
         if particular is None:
             raise ValueError("The matching is not an isometry, so it does not extend.")
 
-        image = None
-        for mask in range(1 << len(null)):
-            trial = particular.copy()
-            for bit in range(len(null)):
-                if mask >> bit & 1:
-                    trial = (trial ^ null[bit]) % 2
-            if rank(np.array(target + [trial])) > len(target):
-                image = trial
-                break
+        # Valid images form the affine space ``particular + null``. One of them is
+        # independent of the images placed so far unless the whole space lies inside
+        # their span, and if the offset itself is dependent then some basis vector is
+        # not -- so the basis suffices and the 2^k enumeration never was needed.
+        image = next(
+            (
+                trial
+                for trial in [particular] + [(particular ^ v) % 2 for v in null]
+                if rank(np.array(target + [trial])) > len(target)
+            ),
+            None,
+        )
         if image is None:
             raise ValueError("No independent image satisfies the symplectic constraints.")
         source.append(fresh)

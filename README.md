@@ -186,6 +186,31 @@ Needs [kak-tools](https://github.com/QPauLie/kak-tools) with
 
 ## Outlook
 
+Two questions decide whether the remaining gap can be closed at all, and they are
+different questions because the two instances fail differently.
+
+**BH: is there a frame, and how would it be found?** The degree bound permits a
+two-local representation here — 124 against 159 — but nothing reaches one. No HamLib
+encoding does, greedy descent over `H`/`S`/`CNOT` improves mean weight by 11% and
+stalls in five moves, and the published annealing ceiling of 15–40% would still leave
+4.8 far above 2.0. Either a finer Clifford invariant forbids it, in which case the
+degree bound wants sharpening — the support-class structure of the anticommutation
+graph is the natural candidate — or a target exists that local search cannot see, in
+which case it has to be constructed from the classification rather than searched for.
+Both are answerable; neither is answered here.
+
+**LiH: is there a physically motivated route?** Not through the representation — that
+is settled, degree 264 against 195. But high weight is a property of the *fermionic
+basis*, not of the physics: molecular orbitals are a choice like any other, and the
+Coulomb interaction is only all-to-all in the basis one happens to write it in. Double
+factorization already exploits this, rewriting the Hamiltonian as O(N) fragments that
+are each quadratic and therefore each two-local in their own frame. The open question
+is whether the fragments' frames can be reconciled — a shared basis in which several
+fragments are simultaneously local would let one Clifford serve many, where today each
+fragment would pay its own. That is a question about the geometry of the low-rank
+decomposition, and it is where this compiler's classification could contribute
+something the chemistry literature does not currently ask for.
+
 **A reference representation derived from the classification.** `lizzy.frame` needs a
 target to move towards, and today that target is supplied. The classification already
 names the canonical graph — PauLie's types A/B1/B2/B3 *are* the canonical forms of

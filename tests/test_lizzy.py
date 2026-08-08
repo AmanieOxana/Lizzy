@@ -301,6 +301,20 @@ def test_gram_survives_an_empty_operator() -> None:
     assert anticommutation_matrix([]).shape == (0, 0)
 
 
+def test_witt_extension_scales_past_toy_sizes() -> None:
+    """The image search walks the null basis, not its 2^k subsets.
+
+    At twenty qubits the null space starts at dimension forty, so an enumeration over
+    subsets would never return; this pins that the construction stays linear in it.
+    """
+    width = 20
+    rng = np.random.default_rng(0)
+    source = [rng.integers(0, 2, 2 * width) for _ in range(3)]
+    matrix = witt_extend(source, source, width)
+    assert is_symplectic(matrix, width)
+    assert all(np.array_equal((v @ matrix) % 2, v % 2) for v in source)
+
+
 def test_witt_extension_refuses_a_non_isometry() -> None:
     """A matching that does not preserve the form has no symplectic extension, and
     saying so beats returning a matrix that quietly is not a Clifford."""
