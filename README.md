@@ -196,6 +196,14 @@ Needs [kak-tools](https://github.com/QPauLie/kak-tools) with
 [PR #1](https://github.com/QPauLie/kak-tools/pull/1) and PauLie with
 [PR #232](https://github.com/QPauLie/PauLie/pull/232).
 
+PauLie also needs [pauliebits](https://github.com/QPauLie/pauliebits), which is not on
+PyPI. Its location lives in PauLie's `[tool.uv.sources]`, which `uv` reads and `pip`
+does not, so a pip environment installs it explicitly or the import fails:
+
+```bash
+pip install 'git+https://github.com/QPauLie/pauliebits.git@master'
+```
+
 ## Outlook
 
 Two questions decide whether the remaining gap can be closed at all, and they are
