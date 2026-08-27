@@ -93,10 +93,7 @@ def solve(matrix: np.ndarray, target: np.ndarray):
     rows, columns = matrix.shape
     augmented = np.hstack([matrix % 2, target.reshape(-1, 1) % 2])
     pivots = _eliminate(augmented, columns)
-    if any(
-        augmented[r, :columns].sum() == 0 and augmented[r, columns]
-        for r in range(len(pivots), rows)
-    ):
+    if any(augmented[r, columns] for r in range(len(pivots), rows)):
         return None, None
 
     particular = np.zeros(columns, dtype=np.int64)

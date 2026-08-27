@@ -98,8 +98,9 @@ def test_exact_branch_is_flat_in_time(n: int) -> None:
 
 
 @pytest.mark.parametrize("n", [4, 5, 6, 7])
-def test_odd_irrep_sizes_are_reachable(n: int) -> None:
-    """The Ising chain is so(2n-1) in PauLie's convention, and must still decompose."""
+def test_ising_chains_decompose_at_every_width(n: int) -> None:
+    """The Ising chain classifies as so(2n) at each of these widths, and the exact
+    route must accept every one of them."""
     h = model("tfim", n, seed=0)
     assert is_decomposable(h)
 
@@ -175,14 +176,12 @@ def test_tapering_keeps_the_spectrum_of_its_sector(name: str, n: int) -> None:
     # an odd chain's X^n and Z^n cannot both be fixed and only one is used.
     assert 0 < len(removed) <= len(charges)
 
-    def spectrum(hamiltonian_, width):
-        matrix = sum(
-            c.real * pauli_matrix(str(p)) for c, p in terms_of(hamiltonian_)
-        )
+    def spectrum(hamiltonian_):
+        matrix = sum(c.real * pauli_matrix(str(p)) for c, p in terms_of(hamiltonian_))
         return np.sort(np.linalg.eigvalsh(matrix))
 
-    full = spectrum(h, n)
-    reduced = spectrum(tapered, n - len(removed))
+    full = spectrum(h)
+    reduced = spectrum(tapered)
     assert all(np.min(np.abs(full - value)) < 1e-8 for value in reduced)
 
 
@@ -244,9 +243,8 @@ def test_matching_must_respect_algebraic_dependencies() -> None:
     jw = load(archive, "fh-graph-1D-grid-nonpbc-qubitnodes_Lx-2_U-4_enc-jw")
     bk = load(archive, "fh-graph-1D-grid-nonpbc-qubitnodes_Lx-2_U-4_enc-bk")
     source, target = pauli_vectors(bk), pauli_vectors(jw)
-    width = source.shape[1] // 2
 
-    found = find_assignment(source, target, width)
+    found = find_assignment(source, target)
     assert found is not None
     assignment, _ = found
     assert sorted(assignment) == list(range(source.shape[0]))  # a bijection
@@ -396,9 +394,10 @@ def test_free_part_declines_dense_families_within_budget(n: int) -> None:
     """All-to-all XX+YY is not hopping -- the Jordan-Wigner strings beyond nearest
     neighbours make it exponential -- so the right answer is no, and the budget makes
     that answer cheap instead of classifying n^2-term candidates to hear it."""
-    free, rest = free_part(model("heisenberg_all_to_all", n, seed=0))
+    h = model("heisenberg_all_to_all", n, seed=0)
+    free, rest = free_part(h)
     assert free is None
-    assert len(terms_of(rest)) == len(terms_of(model("heisenberg_all_to_all", n, seed=0)))
+    assert len(terms_of(rest)) == len(terms_of(h))
 
 
 @pytest.mark.parametrize("n", [4, 5])
@@ -415,7 +414,6 @@ def test_noncommuting_kernels_compile_exactly(seed: int) -> None:
     """A kernel with fields folded in is not internally commuting, and its KAK
     emission must still equal the 4x4 exponential -- checked here through the dense
     machinery, on top of the self-check every kernel runs at synthesis time."""
-    import numpy as np
     from scipy.linalg import expm as dense_expm
 
     from lizzy.kernels import compile_kernel

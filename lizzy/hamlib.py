@@ -82,7 +82,7 @@ def keys(path: Path) -> list[str]:
         return sorted(handle.keys())
 
 
-def load(path: Path, key: str, max_qubits: int | None = None) -> PauliStringLinear:
+def load(path: Path, key: str) -> PauliStringLinear:
     """
     Read one Hamiltonian out of a HamLib file.
 
@@ -93,14 +93,11 @@ def load(path: Path, key: str, max_qubits: int | None = None) -> PauliStringLine
     Args:
         path (Path): Local path to a HamLib HDF5 file.
         key (str): Dataset key within the file.
-        max_qubits (int, optional): Skip the Hamiltonian and raise if it acts on more
-            qubits than this.
     Returns:
         PauliStringLinear: The Hamiltonian.
 
     Raises:
         ImportError: If h5py or openfermion is not installed.
-        ValueError: If the Hamiltonian is wider than ``max_qubits``.
     """
     h5py = _require_h5py()
     openfermion = _require_openfermion()
@@ -112,9 +109,6 @@ def load(path: Path, key: str, max_qubits: int | None = None) -> PauliStringLine
     width = 1 + max(
         (qubit for term in operator.terms for qubit, _ in term), default=0
     )
-    if max_qubits is not None and width > max_qubits:
-        raise ValueError(f"{key} acts on {width} qubits, above the {max_qubits} limit.")
-
     terms = []
     for term, coefficient in operator.terms.items():
         if not term:

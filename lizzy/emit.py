@@ -19,12 +19,12 @@ from lizzy.hamiltonian import Circuit
 
 
 def pauli_boxes(rotations, width: int):
-    """
+    r"""
     Build the pytket box circuit of a rotation sequence, boxes decomposed.
 
     The one place the angle convention lives: pytket's ``PauliExpBox`` takes half
     turns, ours is :math:`e^{-i\theta P}`, so the box parameter is
-    :math:`2\theta/\\pi`.
+    :math:`2\theta/\pi`.
 
     Args:
         rotations: ``(word_or_PauliString, angle)`` pairs.

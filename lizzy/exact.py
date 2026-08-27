@@ -39,7 +39,7 @@ def is_decomposable(hamiltonian_: PauliStringLinear) -> bool:
     must have an ``so(m)`` presentation, which is what the Pauli-word pipeline of
     ``kak_tools`` implements.
 
-    Parts with more than ``8n`` terms are declined without classifying them, on the
+    Parts with more than ``max(64, 8n)`` terms are declined without classifying them, on the
     same budget reasoning as :func:`free_part`: classification at dense sizes costs
     minutes, and every polynomial DLA of a 2-local model lives on a chain or circle
     with O(n) terms (`Wiersema et al. <https://doi.org/10.1038/s41534-024-00900-2>`__;
@@ -242,7 +242,7 @@ def free_part(
     failed rather than in place of it. On LiH that is the difference between no free
     part and a forty-four term one.
 
-    Candidates are capped at ``8n`` terms before any classification runs. This is a
+    Candidates are capped at ``max(64, 8n)`` terms before any classification runs. This is a
     search budget, not a theorem: what it protects against is spending minutes
     classifying a dense model's n^2-term families -- all-to-all XX+YY looks like
     hopping but is not, since beyond nearest neighbours the Jordan-Wigner strings make

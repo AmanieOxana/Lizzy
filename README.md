@@ -87,28 +87,13 @@ that wins on gate count can still miss the budget it was sized for.
 Fifteen HamLib instances, the same fixed-depth task for every compiler (two Suzuki-2
 steps at t=1), two-qubit gates after each compiler's best effort — Qiskit at
 `optimization_level=3` and the better of its default and Rustiq synthesis, pytket at
-the better of `GreedyPauliSimp` and `FullPeepholeOptimise`. Reproduce with
-`python -m lizzy.compare`:
+the better of `GreedyPauliSimp` and `FullPeepholeOptimise`. Bars are each compiler's
+cost as a multiple of this one, with Lizzy's own gate count in brackets. Reproduce
+the numbers and redraw the figure with `python -m lizzy.compare`:
 
-| HamLib instance | n | terms | Lizzy | Qiskit | pytket |
-|---|---|---|---|---|---|
-| tfim 1D chain | 100 | 199 | **396** | 786 | 687 |
-| tfim 1D ring | 100 | 200 | **400** | 794 | 771 |
-| tfim 2D grid | 100 | 280 | **720** | 1 434 | 1 316 |
-| tfim hex lattice | 48 | 111 | **268** | 496 | 467 |
-| tfim 3D grid | 27 | 81 | **216** | 426 | 386 |
-| heisenberg 1D chain | 100 | 397 | **888** | 1 179 | 1 179 |
-| heisenberg 2D grid | 100 | 640 | **1 860** | 2 151 | 2 151 |
-| heisenberg 2D torus | 100 | 700 | **1 989** | 2 391 | 2 391 |
-| fermi-hubbard 1D, JW | 100 | 346 | **884** | 1 178 | 1 178 |
-| fermi-hubbard 1D, BK | 100 | 346 | **1 714** | 4 594 | 2 866 |
-| maxcut circulant | 100 | 200 | **323** | 588 | **323** |
-| H2 molecule | 4 | 14 | **26** | 47 | 28 |
-| BH molecule | 10 | 275 | **1 890** | 5 788 | 2 136 |
-| LiH molecule, BK | 12 | 630 | **4 340** | 16 982 | 4 405 |
-| LiH molecule, JW | 12 | 630 | **4 099** | 16 133 | 4 486 |
+![Two-qubit gates relative to Lizzy on fifteen HamLib instances](docs/comparison.png)
 
-Rustiq is Qiskit's Pauli-network plugin and folded into that column. It is the better
+Rustiq is Qiskit's Pauli-network plugin, folded into the Qiskit bar. It is the better
 of the two on chemistry, where sharing a Clifford frame pays, and much the worse
 everywhere else — 57 620 gates against 2 151 on the 2D Heisenberg grid, since
 preserving rotation order leaves a network with nothing to share.

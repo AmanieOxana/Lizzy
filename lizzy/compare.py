@@ -11,6 +11,7 @@
 """
 
 import warnings
+from pathlib import Path
 
 from lizzy.dense import circuit_matrix, evolution, infidelity
 from lizzy.hamiltonian import Circuit, model, n_qubits, terms_of
@@ -193,12 +194,13 @@ def oracle_table(error: float = 1e-3) -> None:
         print(row, flush=True)
 
 
-def hamlib_table(steps: int = 2, time_: float = 1.0) -> None:
+def hamlib_table(steps: int = 2, time_: float = 1.0) -> list[dict]:
     """Every compiler gets the same fixed-depth task on HamLib at 100 qubits."""
     from lizzy.emit import tket_two_qubit_gates
 
     print(f"\nHamLib, fixed steps={steps}, t={time_}")
     print(f"{'instance':16}{'n':>5}{'terms':>7}{'lizzy':>9}{'qiskit':>9}{'tket':>9}  route")
+    rows = []
     for label, archive, key in HAMLIB_CASES:
         try:
             h = load(fetch(archive), key)
@@ -213,19 +215,72 @@ def hamlib_table(steps: int = 2, time_: float = 1.0) -> None:
         shared = tket_two_qubit_gates(ours.circuit, width)
         if shared is not None and shared < best:
             best, emission = shared, "+frame"
-        row = (
-            f"{label:16}{width:>5}{len(terms_of(h)):>7}{best:>9,}"
-            f"{qiskit_best(h, width, time_, steps):>9,}"
-            f"{tket_cx(h, width, time_, steps):>9,}"
+        row = {
+            "label": label, "n": width, "terms": len(terms_of(h)), "lizzy": best,
+            "qiskit": qiskit_best(h, width, time_, steps),
+            "tket": tket_cx(h, width, time_, steps),
+        }
+        rows.append(row)
+        print(
+            f"{label:16}{width:>5}{row['terms']:>7}{best:>9,}"
+            f"{row['qiskit']:>9,}{row['tket']:>9,}"
+            f"  {','.join(ours.routes)}{emission}",
+            flush=True,
         )
-        print(row + f"  {','.join(ours.routes)}{emission}", flush=True)
+    return rows
+
+
+def plot_hamlib(rows: list[dict], path: str = "docs/comparison.png") -> str:
+    """Draw each competitor's cost relative to this compiler -- the README figure.
+
+    The counts span 26 to 17 000 gates, a range a log axis would flatten into bars of
+    near-equal length, so the axis is the ratio to Lizzy instead and the absolute
+    count this compiler paid is printed beside each instance.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    span, bar = range(len(rows)), 0.36
+    figure, axes = plt.subplots(figsize=(8, 0.42 * len(rows) + 1.5), facecolor="white")
+    for index, (name, key, colour) in enumerate(
+        (("Qiskit", "qiskit", "#4f8db5"), ("pytket", "tket", "#a9cbdf"))
+    ):
+        widths = [r[key] / r["lizzy"] for r in rows]
+        axes.barh([y + (0.5 - index) * bar for y in span], widths, bar,
+                  label=name, color=colour, edgecolor="white", linewidth=0.5)
+        for y, width in zip(span, widths):
+            axes.text(width + 0.04, y + (0.5 - index) * bar, f"{width:.2f}x",
+                      va="center", fontsize=7.5, color="0.35")
+    axes.axvline(1.0, color="#14425f", linewidth=1.6)
+    axes.text(1.0, -0.9, "Lizzy", ha="center", va="bottom", fontsize=9,
+              color="#14425f", fontweight="bold")
+    axes.set_yticks(list(span),
+                    [f"{r['label']}   n={r['n']}   ({r['lizzy']:,})" for r in rows],
+                    fontsize=9)
+    axes.invert_yaxis()
+    axes.set_xlim(0, max(r["qiskit"] / r["lizzy"] for r in rows) * 1.12)
+    axes.set_xlabel("two-qubit gates relative to Lizzy (Lizzy's own count in brackets)")
+    axes.xaxis.grid(True, color="0.9", linewidth=0.6)
+    axes.set_axisbelow(True)
+    for edge in ("top", "right", "left"):
+        axes.spines[edge].set_visible(False)
+    axes.legend(frameon=False, ncols=2, loc="lower right")
+    figure.tight_layout()
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(path, dpi=200, facecolor="white")
+    plt.close(figure)
+    return path
 
 
 def main() -> None:
     """Run both benchmark tables."""
     warnings.filterwarnings("ignore")
     _check_tket_convention()
-    hamlib_table()
+    rows = hamlib_table()
+    if rows:
+        print(f"\nfigure: {plot_hamlib(rows)}")
     oracle_table()
 
 

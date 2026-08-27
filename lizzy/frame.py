@@ -82,7 +82,7 @@ def independent_rows(vectors: np.ndarray) -> tuple[list[int], np.ndarray]:
     return chosen, coordinates
 
 
-def find_assignment(source: np.ndarray, target: np.ndarray, width: int, budget: int = 2_000_000):
+def find_assignment(source: np.ndarray, target: np.ndarray, budget: int = 2_000_000):
     """
     Match source terms to target terms, preserving commutation and dependencies.
 
@@ -95,7 +95,6 @@ def find_assignment(source: np.ndarray, target: np.ndarray, width: int, budget: 
     Args:
         source (numpy.ndarray): Source bit vectors, one per row.
         target (numpy.ndarray): Target bit vectors, one per row.
-        width (int): Number of qubits.
         budget (int): Maximum candidate placements to try.
     Returns:
         tuple | None: The target row each source row maps to, and the independent
@@ -245,7 +244,7 @@ def clifford_to(hamiltonian_: PauliStringLinear, reference: PauliStringLinear):
         return None
     width = source.shape[1] // 2
 
-    found = find_assignment(source, target, width)
+    found = find_assignment(source, target)
     if found is None:
         return None
     assignment, chosen = found

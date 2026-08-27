@@ -42,8 +42,8 @@ class Result:
         summands (int): Number of parts the Hamiltonian split into.
         symmetries (int): Independent Z2 symmetries found, i.e. qubits tapering could
             remove.
-        clusters (int): Commuting groups in the largest Trotterized part, zero if
-            nothing was Trotterized.
+        clusters (int): Commuting groups in the part that had the most of them,
+            counted whichever route that part ended up taking.
         routes (list[str]): Which branches were used.
         randomized (bool): True if any part was sampled, in which case the error is a
             bound in expectation rather than on this one circuit.
@@ -76,15 +76,16 @@ def synthesize(
     r"""
     Synthesize :math:`e^{-itH}` for a Pauli Hamiltonian.
 
-    The route is chosen per part:
+    Every candidate the classification allows is priced per part and the cheapest
+    circuit wins -- exactness is not a priority order:
 
-    * a part whose algebra is small and orthogonal is decomposed exactly, at a depth
+    * an exact decomposition, where the algebra is small and orthogonal, at a depth
       that does not grow with ``time``;
-    * otherwise the largest exactly-compilable subset of its terms is taken out and
-      decomposed, and only the remainder goes through a product formula -- either the
-      requested order sized by the chain bound, or the second-order formula over
-      commuting clusters sized by the collected cluster bound (route ``trotter2``),
-      whichever costs fewer gates.
+    * a hybrid, taking the largest exactly-compilable subset out and carrying it as
+      one more summand inside each step;
+    * a product formula -- either the requested order sized by the chain bound, or
+      the second-order formula over commuting clusters sized by the collected
+      cluster bound (route ``trotter2``).
 
     With ``randomized=True`` the remainder is additionally split by coefficient
     magnitude and its small terms are sampled rather than stepped through.
