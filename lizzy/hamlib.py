@@ -1,11 +1,11 @@
 """
-    Loading Hamiltonians from HamLib.
+Loading Hamiltonians from HamLib.
 
-    HamLib ships as HDF5 files hosted at NERSC. They are fetched on demand and cached,
-    so nothing here is needed to run the builtin model families -- the offline path
-    stays open, which is what keeps the tests independent of the network.
+HamLib ships as HDF5 files hosted at NERSC. They are fetched on demand and cached,
+so nothing here is needed to run the builtin model families -- the offline path
+stays open, which is what keeps the tests independent of the network.
 
-    See https://portal.nersc.gov/cfs/m888/dcamps/hamlib/ and arXiv:2306.13126.
+See https://portal.nersc.gov/cfs/m888/dcamps/hamlib/ and arXiv:2306.13126.
 """
 
 import os
@@ -16,6 +16,11 @@ from pathlib import Path
 
 from paulie.common.pauli_string_linear import PauliStringLinear
 
+from lizzy.chemistry import (
+    MolecularHamiltonian,
+    fermion_operator_openfermion,
+    molecular_from_openfermion_ffsim,
+)
 from lizzy.hamiltonian import hamiltonian
 
 BASE_URL = "https://portal.nersc.gov/cfs/m888/dcamps/hamlib"
@@ -104,11 +109,11 @@ def load(path: Path, key: str) -> PauliStringLinear:
 
     with h5py.File(path, "r") as handle:
         text = handle[key][()]
-    operator = openfermion.QubitOperator(text.decode("utf-8") if isinstance(text, bytes) else text)
-
-    width = 1 + max(
-        (qubit for term in operator.terms for qubit, _ in term), default=0
+    operator = openfermion.QubitOperator(
+        text.decode("utf-8") if isinstance(text, bytes) else text
     )
+
+    width = 1 + max((qubit for term in operator.terms for qubit, _ in term), default=0)
     terms = []
     for term, coefficient in operator.terms.items():
         if not term:
@@ -119,6 +124,62 @@ def load(path: Path, key: str) -> PauliStringLinear:
         terms.append(("".join(letters), float(coefficient.real)))
 
     return hamiltonian(terms)
+
+
+def load_molecular(path: Path, key: str) -> MolecularHamiltonian:
+    r"""Read a HamLib ``ham_molec-*`` dataset without losing its raw integrals.
+
+    OpenFermion parses and validates the symbolic text.  After translating HamLib's
+    interleaved integer modes to explicit spin-labelled actions, ffsim's
+    ``MolecularHamiltonian.from_fermion_operator`` recovers the spatial tensors
+    without normal ordering.  Calling OpenFermion's ``get_interaction_operator`` here
+    would be lossy because it normal-orders away HamLib's redundant raw tensor.
+
+    HamLib orders spin orbitals as interleaved alpha/beta pairs.  The returned object
+    stores the corresponding real spin-restricted tensors in spatial-orbital form.
+
+    Args:
+        path: Local HamLib HDF5 file.
+        key: A molecular dataset such as ``"ham_molec-12"``.
+    Returns:
+        MolecularHamiltonian: Spatial one- and two-electron tensors.
+
+    Raises:
+        ValueError: If the dataset is not a real spin-restricted molecular operator.
+        ImportError: If h5py, openfermion, or ffsim is not installed.
+    """
+    h5py = _require_h5py()
+    openfermion = _require_openfermion()
+    with h5py.File(path, "r") as handle:
+        text = handle[key][()]
+    if isinstance(text, bytes):
+        text = text.decode("utf-8")
+    source = openfermion.FermionOperator(text)
+
+    modes = 1 + max((index for term in source.terms for index, _ in term), default=-1)
+    suffix = key.rsplit("-", 1)[-1]
+    if suffix.isdigit():
+        modes = max(modes, int(suffix))
+    if modes <= 0 or modes % 2:
+        raise ValueError(
+            f"molecular dataset must contain an even number of modes, got {modes}"
+        )
+    molecular = molecular_from_openfermion_ffsim(
+        source,
+        n_orbitals=modes // 2,
+        qubit_order="interleaved",
+    )
+    # Validate every redundant spin block.  This catches an incompatible orbital
+    # ordering instead of silently returning plausible-looking but wrong tensors.
+    difference = openfermion.normal_ordered(
+        fermion_operator_openfermion(molecular) - source
+    )
+    if difference.induced_norm() > 1e-8:
+        raise ValueError(
+            "molecular dataset is not a real spin-restricted operator in "
+            "interleaved order"
+        )
+    return molecular
 
 
 def _require_h5py():

@@ -35,7 +35,9 @@ def z2_symmetries(hamiltonian_: PauliStringLinear) -> list[PauliString]:
     return [s for s in collection.get_commutant_basis() if not s.is_identity()]
 
 
-def commuting_clusters(hamiltonian_: PauliStringLinear) -> list[PauliStringLinear]:
+def commuting_clusters(
+    hamiltonian_: PauliStringLinear, strategy: str = "largest_first"
+) -> list[PauliStringLinear]:
     r"""
     Partition a Hamiltonian into mutually commuting groups of terms.
 
@@ -44,14 +46,20 @@ def commuting_clusters(hamiltonian_: PauliStringLinear) -> list[PauliStringLinea
     That number is remarkably stable: two for a transverse-field Ising chain and three
     for Heisenberg, whether the model has fifty terms or eight hundred.
 
-    Finding the fewest groups is graph colouring and is NP-hard, so this uses the
-    largest-first heuristic on the anticommutation graph.
+    Finding the fewest groups is graph colouring and is NP-hard, so the default is
+    NetworkX's largest-first heuristic on the anticommutation graph. Other NetworkX
+    greedy-colouring strategies can be selected when they find a better partition for
+    a particular Hamiltonian; useful deterministic choices include ``independent_set``
+    and ``saturation_largest_first`` (also available as ``DSATUR``).
 
     Args:
         hamiltonian_ (PauliStringLinear): The Hamiltonian.
+        strategy (str): A strategy accepted by :func:`networkx.greedy_color`.
+            Defaults to ``largest_first``.
     Returns:
         list[PauliStringLinear]: The groups, largest first. Terms within a group
-        commute pairwise; terms in different groups need not.
+        commute pairwise; terms in different groups need not. Equal-sized groups and
+        terms within each group follow their original Hamiltonian order.
     """
     terms = terms_of(hamiltonian_)
     paulis = [p for _, p in terms]
@@ -61,15 +69,19 @@ def commuting_clusters(hamiltonian_: PauliStringLinear) -> list[PauliStringLinea
     graph.add_nodes_from(range(len(paulis)))
     graph.add_edges_from(zip(*np.nonzero(np.triu(adjacency))))
 
-    colours = nx.coloring.greedy_color(graph, strategy="largest_first")
-    grouped: dict[int, list[tuple[complex, PauliString]]] = {}
-    for index, colour in colours.items():
-        grouped.setdefault(colour, []).append(terms[index])
+    colours = nx.coloring.greedy_color(graph, strategy=strategy)
+    grouped: dict[int, list[int]] = {}
+    for index in range(len(terms)):
+        grouped.setdefault(colours[index], []).append(index)
 
-    clusters = [
-        hamiltonian([(str(p), c) for c, p in group]) for group in grouped.values()
+    # Colour numbers and the order in which a strategy visits nodes are implementation
+    # details. Canonicalizing with original term indices makes the public result stable
+    # while retaining the documented largest-cluster-first ordering.
+    groups = sorted(grouped.values(), key=lambda indices: (-len(indices), indices))
+    return [
+        hamiltonian([(str(terms[index][1]), terms[index][0]) for index in indices])
+        for indices in groups
     ]
-    return sorted(clusters, key=len, reverse=True)
 
 
 def pair_clusters(hamiltonian_: PauliStringLinear) -> list[PauliStringLinear] | None:

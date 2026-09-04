@@ -196,8 +196,6 @@ def oracle_table(error: float = 1e-3) -> None:
 
 def hamlib_table(steps: int = 2, time_: float = 1.0) -> list[dict]:
     """Every compiler gets the same fixed-depth task on HamLib at 100 qubits."""
-    from lizzy.emit import tket_two_qubit_gates
-
     print(f"\nHamLib, fixed steps={steps}, t={time_}")
     print(f"{'instance':16}{'n':>5}{'terms':>7}{'lizzy':>9}{'qiskit':>9}{'tket':>9}  route")
     rows = []
@@ -209,12 +207,14 @@ def hamlib_table(steps: int = 2, time_: float = 1.0) -> list[dict]:
             continue
         width = n_qubits(h)
         ours = synthesize(h, time=time_, steps=steps)
-        # The router prices the emissions too: the builtin ladder/block count against
-        # the shared-frame backend when it is available, cheapest wins.
-        best, emission = ours.two_qubit_gates, ""
-        shared = tket_two_qubit_gates(ours.circuit, width)
-        if shared is not None and shared < best:
-            best, emission = shared, "+frame"
+        # Result retains the concrete complete-circuit emission that won. Recompiling
+        # here would duplicate work and could report a different heuristic run.
+        best = ours.two_qubit_gates
+        emission = (
+            ""
+            if ours.emission_backend == "builtin"
+            else f"+{ours.emission_backend}"
+        )
         row = {
             "label": label, "n": width, "terms": len(terms_of(h)), "lizzy": best,
             "qiskit": qiskit_best(h, width, time_, steps),

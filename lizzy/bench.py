@@ -4,8 +4,8 @@
     Reports what each lever actually bought, per instance, rather than a single gate
     count: which route was taken, how many qubits the symmetries would remove, how many
     commuting clusters a Trotter step needs, and where the exact branch overtakes the
-    product formula. Randomized routes are averaged over seeds and flagged, because
-    their error bound is in expectation rather than on the one circuit produced.
+    product formula. Randomized routes are averaged over seeds and flagged because
+    the sampled composite does not retain the requested error guarantee.
 
     Run with ``python -m lizzy.bench``.
 """
@@ -91,9 +91,15 @@ def run(
         "symmetries": result.symmetries,
         "clusters": result.clusters,
         "routes": ",".join(result.routes),
+        "emission_backend": result.emission_backend,
         "randomized": result.randomized,
+        "error_guaranteed": result.error_guaranteed,
+        "routing_estimated": result.routing_estimated,
         "two_qubit": statistics.mean(counts),
         "two_qubit_sd": statistics.stdev(counts) if len(counts) > 1 else 0.0,
+        "logical_two_qubit": result.logical_two_qubit_gates,
+        # Provenance belongs to the logical sequence. A shared-frame backend can move
+        # gates across route boundaries, so this need not sum to ``two_qubit``.
         "by_route": result.circuit.cost_by_route(),
         "achieved": statistics.mean(achieved) if achieved else None,
         # A sampled circuit's infidelity is not what qDRIFT bounds: the guarantee is on
@@ -197,7 +203,7 @@ def _print(rows: list[dict]) -> None:
             f"{row['algebra']:12}{row['summands']:>4}{row['symmetries']:>4}"
             f"{row['clusters']:>4}{row['two_qubit']:>11.0f}{row['two_qubit_sd']:>7.0f}"
             f"{(str(baseline) if baseline else '-'):>14}{gain:>9}  {achieved:>10}{flag}  "
-            f"{row['routes']}"
+            f"{row['routes']} [{row['emission_backend']}]"
         )
 
 

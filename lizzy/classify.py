@@ -13,6 +13,11 @@ from scipy.sparse.csgraph import connected_components
 
 from lizzy.hamiltonian import anticommutation_matrix, terms_of
 
+# DLA classification depends on generator words, not coefficients or input order.
+# ``free_part`` revisits the same growing subsets, so cache those structural answers.
+_classification_cache: dict[tuple[str, ...], Classification] = {}
+_CLASSIFICATION_CACHE_SIZE = 4096
+
 
 def classify(hamiltonian: PauliStringLinear) -> Classification:
     """
@@ -24,7 +29,13 @@ def classify(hamiltonian: PauliStringLinear) -> Classification:
         Classification: PauLie's classification, unwrapped. Ask it for
         ``get_algebra()``, ``get_dla_dim()``, ``get_orthogonal_size()`` and the rest.
     """
-    return PauliStringCollection([p for _, p in terms_of(hamiltonian)]).get_class()
+    paulis = [p for _, p in terms_of(hamiltonian)]
+    key = tuple(sorted(str(pauli) for pauli in paulis))
+    if key not in _classification_cache:
+        if len(_classification_cache) >= _CLASSIFICATION_CACHE_SIZE:
+            _classification_cache.pop(next(iter(_classification_cache)))
+        _classification_cache[key] = PauliStringCollection(paulis).get_class()
+    return _classification_cache[key]
 
 
 def is_fast_forwardable(classification: Classification, n_qubits: int) -> bool:

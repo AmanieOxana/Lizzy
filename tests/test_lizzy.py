@@ -363,9 +363,9 @@ def test_hybrid_mechanism_meets_the_budget(n: int) -> None:
 
     h = model("heisenberg", n, seed=1)
     free, rest = free_part(h)
-    cost, build = _hybrid_plan(free, rest, 1.0, 1e-3, 1.0, None)
-    circuit = build()
-    assert circuit.two_qubit_gates <= cost  # folding can only improve on the price
+    plan = _hybrid_plan(free, rest, 1.0, 1e-3, 1.0, None)
+    circuit = plan.circuit
+    assert plan.cost <= circuit.two_qubit_gates
     assert infidelity(evolution(h, 1.0), circuit_matrix(circuit, n)) < 1e-3
 
 
@@ -379,7 +379,7 @@ def test_hybrid_free_network_appears_once_per_step() -> None:
     clusters = commuting_clusters(rest) + [free]
     steps = steps_for_clusters(clusters, 1.0, 1e-3)
 
-    circuit = _hybrid_plan(free, rest, 1.0, 1e-3, 1.0, None)[1]()
+    circuit = _hybrid_plan(free, rest, 1.0, 1e-3, 1.0, None).circuit
     per_step = Circuit()
     for piece in summands(free):
         per_step.extend(decompose(piece, 1.0 / steps))
@@ -570,6 +570,7 @@ def test_fixed_steps_mode_emits_without_sizing() -> None:
 
     result = synthesize(h, time=1.0, steps=3)
     assert result.routes == ["trotter2"]
+    assert not result.error_guaranteed
 
     # Whichever clustering the router priced cheaper, the emitted circuit must be
     # that formula at exactly three steps -- checked as a unitary, since phase
@@ -593,6 +594,7 @@ def test_routing_is_arithmetic_not_precedence() -> None:
     assert cheap.routes == ["trotter2"]
     deep = synthesize(model("tfim", 4, seed=0), time=1.0, steps=200)
     assert deep.routes == ["exact"]
+    assert deep.error_guaranteed
 
 
 def test_dense_parts_are_not_classified() -> None:
@@ -698,6 +700,7 @@ def test_sampling_stays_reachable_when_asked_for() -> None:
     h = _spread_hamiltonian()
     result = synthesize(h, time=1.0, error=1e-1, order=4, seed=0, randomized=True)
     assert result.randomized
+    assert not result.error_guaranteed
     assert "qdrift" in result.routes
     assert not synthesize(h, time=1.0, error=1e-1, order=4, seed=0).randomized
 
@@ -824,6 +827,7 @@ def test_calibration_shrinks_the_circuit_and_keeps_the_budget() -> None:
     tuned = synthesize(h, time=1.0, error=1e-3, order=4, calibration=factor)
 
     assert tuned.two_qubit_gates < base.two_qubit_gates
+    assert not tuned.error_guaranteed
     assert infidelity(evolution(h, 1.0), circuit_matrix(tuned.circuit, 5)) < 1e-3
 
 
@@ -901,7 +905,11 @@ def test_synthesize_reports_the_route_it_took() -> None:
     assert result.algebra == "so(10)"
     assert result.summands == 1
     assert result.symmetries >= 1
-    assert result.circuit.cost_by_route() == {"exact": result.two_qubit_gates}
+    assert result.circuit.cost_by_route() == {
+        "exact": result.logical_two_qubit_gates
+    }
+    assert result.two_qubit_gates <= result.logical_two_qubit_gates
+    assert result.emitted_circuit is result.emission.circuit
 
 
 def test_classification_routes_poly_and_exponential_apart() -> None:
@@ -910,6 +918,21 @@ def test_classification_routes_poly_and_exponential_apart() -> None:
     heisenberg = model("heisenberg", 6, seed=0)
     assert is_fast_forwardable(classify(tfxy), n_qubits(tfxy))
     assert not is_fast_forwardable(classify(heisenberg), n_qubits(heisenberg))
+
+
+def test_classification_is_cached_by_generator_set() -> None:
+    """Coefficients and input order do not change a DLA classification."""
+    from lizzy import classify as classification_module
+
+    first_hamiltonian = hamiltonian([("XI", 1.0), ("IZ", 2.0)])
+    reordered = hamiltonian([("IZ", -7.0), ("XI", 0.25)])
+    classification_module._classification_cache.clear()
+
+    first = classify(first_hamiltonian)
+    second = classify(reordered)
+
+    assert first is second
+    assert len(classification_module._classification_cache) == 1
 
 
 def test_pauli_matrix_matches_the_string() -> None:
