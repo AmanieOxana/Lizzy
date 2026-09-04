@@ -1,8 +1,12 @@
 # Lizzy
 
-Unitary synthesis for Pauli Hamiltonians, routed by what the dynamical Lie algebra
-actually is. Classify the DLA with [PauLie](https://github.com/QPauLie/PauLie), price
-every branch the classification allows, and let the cheapest circuit win.
+Structure-aware unitary synthesis for Pauli Hamiltonians, plus an explicit molecular
+path backed by OpenFermion and ffsim. Lizzy uses the dynamical Lie algebra (DLA) to
+recognize exact `so(m)` and hybrid free-fermion opportunities, then prices those
+routes alongside product-formula and emission alternatives. For generic chemistry,
+the DLA is a filter and special-case detector, not a cost predictor. Representation-
+dependent Pauli structure guides emission, while fermionic structure is retained for
+explicit molecular routes and future accuracy-matched selection.
 
 Named in honor of [Elizabeth Meckes](https://en.wikipedia.org/wiki/Elizabeth_Meckes)
 (1980–2020), mathematician of the classical compact groups — the exact branch of this
@@ -17,16 +21,17 @@ result.routes           # ['exact'] — fixed depth, whatever the time
 result.emission_backend # builtin, native-frame, pytket-direct, or pytket-greedy
 result.two_qubit_gates  # count of that concrete emitted circuit
 result.logical_two_qubit_gates  # builtin count of the verifiable Pauli sequence
-result.error_guaranteed # False for fixed-step, calibrated, or sampled formulas
-result.routing_estimated # True if an oversized loser used the 1/2/4 cost model
+result.error_guaranteed # True here; fixed-step/calibrated/sampled formulas are False
+result.routing_estimated # True if any oversized candidate used the 1/2/4 cost model
 ```
 
 ## The route
 
 ```
 H, t, budget (or a fixed step count)
- ├─ classify the DLA (PauLie), split into commuting summands    [exact]
- └─ per summand, price every candidate and keep the cheapest:
+ ├─ split exactly commuting summands via the anticommutation graph
+ ├─ classify only manageable components/subsets with PauLie
+ └─ per summand, price every available candidate and keep the cheapest:
       exact      so(m) → one orthogonal matrix, reduced to adjacent Givens
                  rotations along the Majorana line         [depth flat in t]
       hybrid     free subalgebra compiled exactly inside each second-order
@@ -79,9 +84,11 @@ OpenFermion owns `FermionOperator` algebra and JW/BK encodings; ffsim owns doubl
 factorization, number/Z conversion, Givens decomposition, adjacent-frame merging and
 the DF-Trotter gate. Lizzy retains a validated tensor façade, the HamLib/layout bridge,
 Qiskit count/provenance metadata and optional policies around that upstream baseline.
-The default preserves ffsim's factor order. The old Givens-distance/2-opt portfolio is
-available only as `frame_ordering="experimental-givens"`, because it changes the
-finite-step approximant and has no accuracy certificate.
+The default preserves ffsim's factor order. Givens-distance/2-opt reordering is an
+explicit experiment under the canonical name
+`frame_ordering="experimental-givens"`, because it changes the finite-step
+approximant and has no accuracy certificate. The former name `"portfolio"` remains a
+deprecated alias.
 
 Ordinary full-rank noncommuting weight-one/two formulas stay on the builtin fast path.
 The native backend is tried for abelian spans and for the certified one-logical-qubit
@@ -142,9 +149,8 @@ steps at t=1), two-qubit gates after each compiler's best effort — Qiskit at
 `optimization_level=3` and the better of its default and Rustiq synthesis, pytket at
 the better of `GreedyPauliSimp` and `FullPeepholeOptimise`. Bars are each compiler's
 cost as a multiple of this one, with Lizzy's own gate count in brackets. Reproduce
-the numbers and redraw the figure with `python -m lizzy.compare`. The checked-in
-figure records the earlier two-emitter baseline; running the command regenerates it
-with the direct-box route, alternative colouring and actual emitted-circuit counts:
+the numbers and overwrite the checked-in figure with `python -m lizzy.compare`. The
+snapshot below was regenerated on 2026-09-04 with Qiskit 2.5.1 and pytket 2.18.1:
 
 ![Two-qubit gates relative to Lizzy on fifteen HamLib instances](docs/comparison.png)
 
@@ -203,9 +209,22 @@ so DF remains an explicit API rather than silently replacing the error-budgeted
 generic router.
 
 At matched accuracy — eight qubits, every compiler given the fewest steps that reach
-1e-3 against a dense reference — Lizzy wins all six model/time combinations measured,
-1.4× to 4.1×, and the margin grows with evolution time on fast-forwardable families:
-at t=8 the exact branch holds 143 gates against Trotter's 1 148.
+1e-3 against a dense reference — the current valid rows are:
+
+| model | t | Lizzy | Qiskit | pytket |
+| --- | ---: | ---: | ---: | ---: |
+| TFIM | 1 | 42 | 60 | 51 |
+| TFIM | 8 | 122 | 588 | 533 |
+| Heisenberg chain | 1 | 93 | 291 | 147 |
+| Heisenberg chain | 8 | 1,206 | 3,797 | 1,869 |
+| Heisenberg all-to-all | 1 | 2,892 | 5,420 | **2,469** |
+
+Lizzy wins the four chain rows, including 122 against the next-best 533 for TFIM at
+`t=8`, but it does not win the dense all-to-all case. The all-to-all `t=4` row is
+deliberately excluded: the previous capped search returned step 64 even though the S2
+comparator still missed 1e-3 there, so it never established a valid matched-accuracy
+count. The benchmark now scans every integer step through the cap — finite-step error
+need not be monotone — and rejects the row if none passes.
 
 **Not every compiler can be scored this way.** Checked against a dense reference on a
 duplicate-free Trotter step, only pytket, Qiskit's `PauliEvolutionGate` and Lizzy
@@ -219,7 +238,7 @@ t=8): it buys cheaper steps with more of them, because reordering costs Trotter
 accuracy. Paulihedral and Tetris are absent because their output could not be verified
 against a reference under any convention tried.
 
-The compiler remains about 4,700 lines of Python across sixteen modules. The algebra
+The compiler is about 5,800 lines of Python across eighteen package files. The algebra
 lives upstream in PauLie and kak-tools, while emission backends stay behind the same
 priced-candidate interface.
 
@@ -240,25 +259,38 @@ change (1 440 reported, 1 440 emitted at tfim 2D; 884 and 884 on Fermi-Hubbard u
 Jordan-Wigner, where the cap said 1 063).
 
 ```bash
-pytest                   # dense checks, offline
+pytest                   # dense/unit checks; HamLib archives download on first use
 python -m lizzy.bench    # per-instance route, cost, achieved error
 python -m lizzy.compare  # the tables above (needs the compare extra)
 ```
 
 ## Install
 
+Python 3.12 or newer is required. Until
+[kak-tools PR #1](https://github.com/QPauLie/kak-tools/pull/1) is released, install
+its tested revision before Lizzy (`kak_tools` is not published on PyPI):
+
 ```bash
-pip install -e .
-pip install -e '.[hamlib]'    # Pauli-form HamLib loading (h5py, openfermion)
-pip install -e '.[chemistry]' # molecular HamLib + ffsim double factorization
-pip install -e '.[compare]'   # benchmark against qiskit and pytket
-pip install -e '.[test]'
+python -m pip install \
+  "kak_tools @ git+https://github.com/QPauLie/kak-tools.git@216ee80646f1e1acd77a1be45dc19b604bf953af"
+python -m pip install -e .
+python -m pip install -e '.[hamlib]'    # Pauli-form HamLib loading
+python -m pip install -e '.[chemistry]' # molecular HamLib + OpenFermion/ffsim/Qiskit
+python -m pip install -e '.[compare]'   # Qiskit/pytket comparison
+python -m pip install -e '.[hamlib,chemistry,compare,test]' # full test environment
 ```
 
-The chemistry path exposes the upstream owners in its function names. Its default is
-ffsim's factor order and block-spin JW layout; requesting
-`qubit_order="interleaved"` adds the fermionic parity conjugation rather than
-pretending the conversion is a free wire relabeling:
+PauLie 0.2.3 contains the required merged
+[PR #232](https://github.com/QPauLie/PauLie/pull/232) and installs
+`pauliebits>=0.1.1` from PyPI transitively; no separate pauliebits installation is
+needed.
+
+The explicit circuit API `synthesize_molecular_ffsim` preserves ffsim's factor order
+and defaults to its block-spin JW layout (`qubit_order="alpha-then-beta"`). On that
+API, requesting `qubit_order="interleaved"` inserts the fermionic parity-conjugation
+network rather than treating the mode permutation as a free wire relabeling. The
+OpenFermion conversion helpers instead default to interleaved mode order, matching
+HamLib:
 
 ```python
 from lizzy.chemistry import synthesize_molecular_ffsim, to_pauli_openfermion
@@ -272,7 +304,7 @@ df.routing_mode                # "input"
 df.factor_order_preserved      # True
 df.two_body_tensor_max_abs_error  # diagnostic, not a unitary-error bound
 df.accuracy_certified          # False
-df.factorization_fingerprint   # identifies the exact upstream factor frames
+df.factorization_fingerprint   # identifies the upstream factor tensors/frames
 
 paulis = to_pauli_openfermion(
     molecule, "jw", qubit_order="alpha-then-beta"
@@ -284,18 +316,6 @@ trial = synthesize_molecular_ffsim(
     molecule, time=1.0, steps=1, frame_ordering="experimental-givens"
 )
 trial.routing_attempted        # True
-```
-
-Needs [kak-tools](https://github.com/QPauLie/kak-tools) with
-[PR #1](https://github.com/QPauLie/kak-tools/pull/1) and PauLie with
-[PR #232](https://github.com/QPauLie/PauLie/pull/232).
-
-PauLie also needs [pauliebits](https://github.com/QPauLie/pauliebits), which is not on
-PyPI. Its location lives in PauLie's `[tool.uv.sources]`, which `uv` reads and `pip`
-does not, so a pip environment installs it explicitly or the import fails:
-
-```bash
-pip install 'git+https://github.com/QPauLie/pauliebits.git@master'
 ```
 
 ## Outlook
@@ -323,13 +343,14 @@ predictive rather than novelty-by-reordering: can cheap structure features ident
 which established representation reaches a common accuracy target at the lowest
 actual cost?
 
-The first feature ablation will combine quantities already available here: Pauli
+The first feature ablation will combine the quantities already exposed here — Pauli
 weight/ladder cost, anticommutation degree distribution, GF(2) span and Gram ranks,
-extractable Z2 symmetries, commutator error constants, DF factor count and Coulomb
-density, and pairwise Givens-distance statistics. H2-4, LiH-8, BH-10 and LiH-12 will be
-compared in one alpha-then-beta convention across JW, BK and ffsim DF at steps 1--3.
-The label is the smallest actual CX count reaching the same seeded physical-sector
-infidelity threshold, not the lowest count at an arbitrarily equal step number.
+extractable Z2 symmetries, commutator error constants and DF factor count — with two
+features still to be surfaced from the chemistry internals: Coulomb density and
+pairwise Givens-distance statistics. H2-4, LiH-8, BH-10 and LiH-12 will be compared in
+one alpha-then-beta convention across JW, BK and ffsim DF at steps 1--3. The label is
+the smallest actual CX count reaching the same seeded physical-sector infidelity
+threshold, not the lowest count at an arbitrarily equal step number.
 
 **A reference representation derived from the classification.** `lizzy.frame` needs a
 target to move towards, and today that target is supplied. The classification already

@@ -781,6 +781,18 @@ def test_cluster_formula_meets_the_budget_it_was_sized_for(name: str, n: int) ->
     assert infidelity(evolution(h, 1.0), circuit_matrix(circuit, n)) < 1e-3
 
 
+def test_oracle_search_handles_nonmonotone_error_and_rejects_an_unmet_cap() -> None:
+    """A capped search returns the actual first pass and never a failing endpoint."""
+    from lizzy.compare import _first_passing
+
+    for threshold in (1, 2, 3, 17, 64):
+        result = _first_passing(lambda steps, threshold=threshold: steps >= threshold)
+        assert result == threshold
+    assert _first_passing(lambda steps: steps == 3 or steps >= 8, high=8) == 3
+    with pytest.raises(ValueError, match="target not reached within the 64-step"):
+        _first_passing(lambda _steps: False)
+
+
 def test_cluster_constant_is_cached() -> None:
     """The constant depends only on the clusters, so asking twice walks once.
 

@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lizzy"
 version = "0.1.0"
-description = "DLA-routed unitary synthesis for Pauli Hamiltonians: classify, price every branch, let the cheapest circuit win"
+description = "Structure-aware unitary synthesis with DLA-specialized exact routes"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "networkx>=3.0",
-    "paulie",
+    "paulie>=0.2.3",
     "pennylane>=0.38",
     "kak_tools",
 ]

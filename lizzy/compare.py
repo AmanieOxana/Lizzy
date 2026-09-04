@@ -4,8 +4,8 @@
     Two contracts, because no single one is fair at every size. At eight qubits every
     compiler gets the fewest steps that reach the budget against a dense reference --
     oracle information nobody has at scale, so nobody is favoured by their sizing
-    method. At a hundred qubits nothing can be verified densely, so every compiler
-    gets the same fixed-depth task instead.
+    method. At larger widths nothing can be verified densely, so every compiler gets
+    the same fixed-depth HamLib task instead.
 
     Needs the ``compare`` extra (qiskit, pytket). Run with ``python -m lizzy.compare``.
 """
@@ -36,13 +36,13 @@ HAMLIB_CASES = [
     ("LiH-JW", "chemistry/electronic/standard/LiH.zip", "ham_JW-12"),
 ]
 
+# At t=4 the old capped search returned a step-64 S2 result that missed 1e-3.
 ORACLE_CASES = [
     ("tfim", 1.0),
     ("tfim", 8.0),
     ("heisenberg", 1.0),
     ("heisenberg", 8.0),
     ("heisenberg_all_to_all", 1.0),
-    ("heisenberg_all_to_all", 4.0),
 ]
 
 
@@ -139,15 +139,14 @@ def _check_tket_convention() -> None:
     assert infidelity(circuit_matrix(ours, 3), boxes.get_unitary()) < 1e-9
 
 
-def _bisect(check, high=64):
-    low = 1
-    while low < high:
-        middle = (low + high) // 2
-        if check(middle):
-            high = middle
-        else:
-            low = middle + 1
-    return low
+def _first_passing(check, high=64):
+    """Return the first passing integer step, without assuming monotone error."""
+    if high < 1:
+        raise ValueError("search cap must be at least one step")
+    for steps in range(1, high + 1):
+        if check(steps):
+            return steps
+    raise ValueError(f"target not reached within the {high}-step search cap")
 
 
 def oracle_table(error: float = 1e-3) -> None:
@@ -164,7 +163,7 @@ def oracle_table(error: float = 1e-3) -> None:
             built = synthesize(h, time=time_, steps=steps)
             return infidelity(target, circuit_matrix(built.circuit, 8)) < error
 
-        ours = synthesize(h, time=time_, steps=_bisect(ours_ok))
+        ours = synthesize(h, time=time_, steps=_first_passing(ours_ok))
 
         def qiskit_ok(steps, h=h, time_=time_, target=target):
             from qiskit import QuantumCircuit, transpile
@@ -185,7 +184,7 @@ def oracle_table(error: float = 1e-3) -> None:
             ).data
             return infidelity(target, unitary) < error
 
-        steps = _bisect(qiskit_ok)
+        steps = _first_passing(qiskit_ok)
         row = (
             f"{name:22}{time_:>4.0f}{ours.two_qubit_gates:>9,}"
             f"{qiskit_best(h, 8, time_, steps):>9,}"
@@ -195,7 +194,7 @@ def oracle_table(error: float = 1e-3) -> None:
 
 
 def hamlib_table(steps: int = 2, time_: float = 1.0) -> list[dict]:
-    """Every compiler gets the same fixed-depth task on HamLib at 100 qubits."""
+    """Every compiler gets the same fixed-depth task on selected HamLib instances."""
     print(f"\nHamLib, fixed steps={steps}, t={time_}")
     print(f"{'instance':16}{'n':>5}{'terms':>7}{'lizzy':>9}{'qiskit':>9}{'tket':>9}  route")
     rows = []
