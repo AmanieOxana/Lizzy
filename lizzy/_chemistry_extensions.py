@@ -12,7 +12,7 @@ import numpy as np
 from scipy.linalg import expm
 
 
-def prune_double_factorization(ffsim, source, factorized, cutoff: float):
+def prune_double_factorization(source, factorized, cutoff: float):
     """Apply Lizzy's optional Coulomb cutoff using ffsim for reconstruction.
 
     ``factorized`` must be in ffsim's number representation.  The one-body tensor

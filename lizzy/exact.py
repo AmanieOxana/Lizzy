@@ -92,8 +92,8 @@ def _irrep(words: tuple[str, ...], width: int) -> tuple:
     """Map a generator set into its so(m) irrep, cached.
 
     Returns the labelled basis for the generators (to build the irrep Hamiltonian), a
-    per-plane table of qubit words and spinor scales, and an index ordering that makes
-    adjacent planes carry the cheapest words available.
+    per-plane table of qubit words and spinor scales, an index ordering that makes
+    adjacent planes carry the cheapest words available, and the irrep size ``m``.
     """
     if words in _irrep_cache:
         return _irrep_cache[words]
@@ -271,7 +271,7 @@ def free_part(
     if not _is_non_abelian(free):
         free = _grow(ordered, terms, budget, defer_abelian=True)
 
-    if len(free) < 2 or not _is_non_abelian(free):
+    if not _is_non_abelian(free):
         # A set of mutually commuting terms contributes nothing to the Trotter error in
         # the first place, so extracting it buys no accuracy and only adds a branch.
         return None, hamiltonian_

@@ -3,7 +3,7 @@
 import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
-pytket = pytest.importorskip("pytket")
+pytest.importorskip("pytket")
 
 from pytket import OpType
 from pytket.passes import AutoRebase, DecomposeBoxes

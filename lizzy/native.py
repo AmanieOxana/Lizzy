@@ -144,10 +144,8 @@ class GF2FrameProfile:
     """Representation-dependent invariants used to decide native-frame eligibility."""
 
     width: int
-    unique_paulis: int
     span_rank: int
     gram_rank: int
-    max_weight: int
 
     @property
     def canonical_qubits(self) -> int:
@@ -201,13 +199,10 @@ def frame_profile(circuit: Circuit, width: int | None = None) -> GF2FrameProfile
         else np.zeros((0, 2 * width), dtype=np.uint8)
     )
     gram_matrix = gf2.gram(vectors)
-    weights = [int(np.count_nonzero(row[:width] | row[width:])) for row in vectors]
     return GF2FrameProfile(
         width=width,
-        unique_paulis=len(vectors),
         span_rank=gf2.rank(vectors),
         gram_rank=gf2.rank(gram_matrix),
-        max_weight=max(weights, default=0),
     )
 
 
@@ -394,10 +389,6 @@ def _commuting_frames(
         frame, gates = _SignedFrame(width), []
         pivots: list[int] = []
         for row in range(len(basis)):
-            for previous, pivot in enumerate(pivots):
-                if basis[row, width + pivot]:
-                    basis[row] ^= basis[previous]
-
             current_support = _support(basis[row], width)
             if not current_support:
                 raise ValueError("Independent commuting generator vanished in reduction.")

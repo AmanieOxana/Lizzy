@@ -189,15 +189,6 @@ def to_ffsim(molecular):
     )
 
 
-def molecular_from_ffsim(molecular) -> MolecularHamiltonian:
-    """Copy an ffsim molecular Hamiltonian into Lizzy's validated façade."""
-    return MolecularHamiltonian(
-        molecular.one_body_tensor,
-        molecular.two_body_tensor,
-        molecular.constant,
-    )
-
-
 def molecular_from_openfermion_ffsim(
     operator,
     *,
@@ -410,11 +401,6 @@ def factorize_molecular_ffsim(
     )
 
 
-def factorize_molecular(molecular, **kwargs):
-    """Short alias for :func:`factorize_molecular_ffsim`."""
-    return factorize_molecular_ffsim(molecular, **kwargs)
-
-
 def synthesize_molecular_ffsim(
     molecular,
     time: float,
@@ -509,7 +495,7 @@ def synthesize_molecular_ffsim(
         reconstructed = number_form.to_molecular_hamiltonian()
     else:
         factorized, reconstructed = prune_double_factorization(
-            ffsim, source, number_form, coulomb_cutoff
+            source, number_form, coulomb_cutoff
         )
     matrices = factorized.diag_coulomb_mats
     tensor_error = float(
@@ -619,38 +605,9 @@ def synthesize_molecular_ffsim(
     )
 
 
-def synthesize_molecular(
-    molecular,
-    time: float,
-    *,
-    steps: int = 1,
-    formula_order: int = 2,
-    tensor_tolerance: float = 1e-8,
-    max_vecs: int | None = None,
-    factorization_optimize: bool = False,
-    cholesky: bool = True,
-    coulomb_cutoff: float = 0.0,
-    givens_tolerance: float = 1e-10,
-    frame_ordering: str | Sequence[int] = "input",
-    qubit_order: str = "alpha-then-beta",
-    optimization_level: int = 1,
-) -> DoubleFactorizedResult:
+def synthesize_molecular(molecular, time: float, **kwargs) -> DoubleFactorizedResult:
     """Compatibility alias for :func:`synthesize_molecular_ffsim`."""
-    return synthesize_molecular_ffsim(
-        molecular,
-        time,
-        steps=steps,
-        formula_order=formula_order,
-        tensor_tolerance=tensor_tolerance,
-        max_vecs=max_vecs,
-        factorization_optimize=factorization_optimize,
-        cholesky=cholesky,
-        coulomb_cutoff=coulomb_cutoff,
-        givens_tolerance=givens_tolerance,
-        frame_ordering=frame_ordering,
-        qubit_order=qubit_order,
-        optimization_level=optimization_level,
-    )
+    return synthesize_molecular_ffsim(molecular, time, **kwargs)
 
 
 def _transpile_ffsim(
@@ -714,7 +671,7 @@ def _real_array(value, name: str) -> np.ndarray:
 def _finite_real_scalar(value, name: str) -> float:
     if (
         not isinstance(value, Real)
-        or isinstance(value, (bool, np.bool_))
+        or isinstance(value, bool)
         or not np.isfinite(value)
     ):
         raise ValueError(f"{name} must be a finite real scalar")

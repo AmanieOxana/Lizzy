@@ -92,10 +92,6 @@ def pauli_boxes(rotations, width: int):
     r"""
     Build the pytket box circuit of a rotation sequence, boxes decomposed.
 
-    The one place the angle convention lives: pytket's ``PauliExpBox`` takes half
-    turns, ours is :math:`e^{-i\theta P}`, so the box parameter is
-    :math:`2\theta/\pi`.
-
     Args:
         rotations: ``(word_or_PauliString, angle)`` pairs.
         width (int): Number of qubits.
@@ -177,24 +173,6 @@ def direct_tket_circuit(
     return synthesized
 
 
-def tket_two_qubit_gates(circuit: Circuit, width: int) -> int | None:
-    """
-    Count the two-qubit gates of the shared-frame emission, if pytket is available.
-
-    Args:
-        circuit (Circuit): The rotations.
-        width (int): Number of qubits.
-    Returns:
-        int | None: The count, or ``None`` without pytket.
-    """
-    try:
-        from pytket import OpType
-        emitted = tket_circuit(circuit, width)
-    except ImportError:
-        return None
-    return emitted.n_gates_of_type(OpType.CX)
-
-
 def direct_tket_two_qubit_gates(
     circuit: Circuit,
     width: int,
@@ -268,8 +246,9 @@ def emission_candidates(
 
     The builtin circuit is always a candidate. A dependency-free native candidate is
     added when the GF(2) span is abelian or is one non-abelian logical qubit. When
-    pytket is installed, both the established decomposed-box pass and the direct
-    intact-box pass are also run. Keeping the candidates separate matters: their
+    pytket is installed and :func:`shared_frame_candidate` passes, the direct
+    intact-box pass is also run, and with ``exhaustive`` the established
+    decomposed-box pass too. Keeping the candidates separate matters: their
     heuristics win on different Hamiltonians, while a minimum over exact candidates
     can never make the emitted gate count worse. Each optional candidate is isolated
     so an absent or incompatible pass leaves the builtin artifact available.

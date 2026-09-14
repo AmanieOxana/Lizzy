@@ -47,7 +47,7 @@ _CANONICAL_DIAGONALS = np.column_stack(
 )
 
 
-def _euler_rotations(u: np.ndarray, qubit_word: tuple[str, str, str]) -> list:
+def _euler_rotations(u: np.ndarray, qubit_word: tuple[str, str]) -> list:
     """Write a single-qubit unitary as up to three weight-one rotations.
 
     ``u = phase * Rz(a) Ry(b) Rz(c)`` with ``R_P(t) = exp(-i t/2 P)``; the words to
@@ -61,7 +61,7 @@ def _euler_rotations(u: np.ndarray, qubit_word: tuple[str, str, str]) -> list:
     diff_ac = 2 * np.angle(su[1, 0]) if abs(su[1, 0]) > 1e-12 else 0.0
     a, c = (sum_ac + diff_ac) / 2, (sum_ac - diff_ac) / 2
 
-    z_word, y_word, _ = qubit_word
+    z_word, y_word = qubit_word
     return [
         (z_word, c / 2),
         (y_word, b / 2),
@@ -169,8 +169,8 @@ def two_qubit_kak(unitary: np.ndarray, qubits: tuple[int, int], width: int) -> C
     def word(letter: str, qubit: int) -> str:
         return "".join(letter if k == qubit else "I" for k in range(width))
 
-    def qubit_words(qubit: int) -> tuple[str, str, str]:
-        return word("Z", qubit), word("Y", qubit), word("X", qubit)
+    def qubit_words(qubit: int) -> tuple[str, str]:
+        return word("Z", qubit), word("Y", qubit)
 
     a_left, b_left = _tensor_factors(_MAGIC @ left @ _MAGIC.conj().T)
     a_right, b_right = _tensor_factors(_MAGIC @ basis.T @ _MAGIC.conj().T)

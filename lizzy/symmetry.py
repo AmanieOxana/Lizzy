@@ -23,8 +23,8 @@ def z2_symmetries(hamiltonian_: PauliStringLinear) -> list[PauliString]:
     Find the independent Pauli symmetries of a Hamiltonian.
 
     These are the elements of the commutant: Pauli strings commuting with every term,
-    so each one is a conserved :math:`\mathbb{Z}_{2}` charge. Every independent charge
-    lets one qubit be removed isospectrally.
+    so each one is a conserved :math:`\mathbb{Z}_{2}` charge. Every charge in a
+    mutually commuting subset lets one qubit be removed isospectrally.
 
     Args:
         hamiltonian_ (PauliStringLinear): The Hamiltonian.
@@ -202,7 +202,7 @@ def _conjugate(coefficient, pauli, charge, partner):
 
 def taper(hamiltonian_: PauliStringLinear, sector: list[int] | None = None):
     r"""
-    Remove one qubit per independent charge, isospectrally.
+    Remove one qubit per commuting charge, isospectrally.
 
     Each :math:`\mathbb{Z}_{2}` charge is rotated onto a single-qubit Pauli by a
     Clifford :math:`(\tau + \sigma)/\sqrt{2}`, after which every term either acts as

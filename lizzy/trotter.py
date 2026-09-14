@@ -195,7 +195,7 @@ def cluster_error_constant(clusters: list, budget: int = 300_000) -> float | Non
         \qquad S_\gamma = \sum_{\gamma' > \gamma} H_{\gamma'} .
 
     Taking the summands to be the commuting clusters does two things at once: the sum
-    has as many terms as there are clusters -- three for a Heisenberg model of any size
+    has as many terms as there are clusters -- at most three for a Heisenberg model of any size
     -- and every norm is of a *collected* commutator, so cancellations between chains
     survive. Each norm is bounded by the collected coefficient 1-norm, which keeps the
     whole computation polynomial. The honest prefactors and the surviving cancellation

@@ -2,8 +2,8 @@
 Loading Hamiltonians from HamLib.
 
 HamLib ships as HDF5 files hosted at NERSC. They are fetched on demand and cached,
-so nothing here is needed to run the builtin model families -- the offline path
-stays open, which is what keeps the tests independent of the network.
+so nothing here is needed to run the builtin model families; the HamLib tests
+download their archives on first use.
 
 See https://portal.nersc.gov/cfs/m888/dcamps/hamlib/ and arXiv:2306.13126.
 """

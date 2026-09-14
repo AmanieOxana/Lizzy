@@ -18,6 +18,7 @@ from lizzy.classify import classify, is_fast_forwardable, summands
 from lizzy.dense import (
     circuit_matrix,
     evolution,
+    hamiltonian_matrix,
     infidelity,
     monomial_form,
     pauli_matrix,
@@ -159,6 +160,11 @@ def test_cluster_count_does_not_grow_with_size(name: str, n: int) -> None:
     assert len(commuting_clusters(model(name, n, seed=0))) <= 4
 
 
+def _spectrum(hamiltonian_):
+    """Sorted eigenvalues, the dense reference behind every isospectral claim."""
+    return np.sort(np.linalg.eigvalsh(hamiltonian_matrix(hamiltonian_)))
+
+
 @pytest.mark.parametrize("name", ["tfim", "tfxy", "heisenberg"])
 @pytest.mark.parametrize("n", [4, 5])
 def test_tapering_keeps_the_spectrum_of_its_sector(name: str, n: int) -> None:
@@ -176,12 +182,8 @@ def test_tapering_keeps_the_spectrum_of_its_sector(name: str, n: int) -> None:
     # an odd chain's X^n and Z^n cannot both be fixed and only one is used.
     assert 0 < len(removed) <= len(charges)
 
-    def spectrum(hamiltonian_):
-        matrix = sum(c.real * pauli_matrix(str(p)) for c, p in terms_of(hamiltonian_))
-        return np.sort(np.linalg.eigvalsh(matrix))
-
-    full = spectrum(h)
-    reduced = spectrum(tapered)
+    full = _spectrum(h)
+    reduced = _spectrum(tapered)
     assert all(np.min(np.abs(full - value)) < 1e-8 for value in reduced)
 
 
@@ -268,11 +270,7 @@ def test_conjugation_preserves_the_spectrum(sites: int) -> None:
 
     transformed = conjugate(bk, clifford_to(bk, jw))
 
-    def spectrum(hamiltonian_):
-        matrix = sum(c.real * pauli_matrix(str(p)) for c, p in terms_of(hamiltonian_))
-        return np.sort(np.linalg.eigvalsh(matrix))
-
-    assert np.abs(spectrum(bk) - spectrum(transformed)).max() < 1e-9
+    assert np.abs(_spectrum(bk) - _spectrum(transformed)).max() < 1e-9
 
 
 @pytest.mark.parametrize("sites", [2, 3])
@@ -414,8 +412,6 @@ def test_noncommuting_kernels_compile_exactly(seed: int) -> None:
     """A kernel with fields folded in is not internally commuting, and its KAK
     emission must still equal the 4x4 exponential -- checked here through the dense
     machinery, on top of the self-check every kernel runs at synthesis time."""
-    from scipy.linalg import expm as dense_expm
-
     from lizzy.kernels import compile_kernel
 
     rng = np.random.default_rng(seed)
@@ -425,9 +421,7 @@ def test_noncommuting_kernels_compile_exactly(seed: int) -> None:
     tau = float(rng.uniform(0.3, 1.5))
 
     circuit = compile_kernel(terms_of(h), tau, 4, "t")
-    target = dense_expm(
-        -1j * tau * sum(c.real * pauli_matrix(str(p)) for c, p in terms_of(h))
-    )
+    target = evolution(h, tau)
     assert infidelity(target, circuit_matrix(circuit, 4)) < 1e-9
     assert circuit.two_qubit_gates <= 3
 
@@ -871,8 +865,7 @@ def test_qdrift_gate_count_ignores_the_term_count() -> None:
     gate count, unchanged -- which is what a product formula cannot do.
     """
     concentrated = hamiltonian({"XXII": 1.0})
-    spread = hamiltonian({s: 0.1 for s in ["XXII", "IXXI", "IIXX", "ZIII", "IZII",
-                                           "IIZI", "IIIZ", "YYII", "IYYI", "IIYY"]})
+    spread = hamiltonian(dict.fromkeys(["XXII", "IXXI", "IIXX", "ZIII", "IZII", "IIZI", "IIIZ", "YYII", "IYYI", "IIYY"], 0.1))
     assert coefficient_norm(concentrated) == pytest.approx(coefficient_norm(spread))
     assert len(qdrift(concentrated, 1.0, 0.1, seed=0)) == len(
         qdrift(spread, 1.0, 0.1, seed=0)

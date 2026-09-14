@@ -93,11 +93,6 @@ class Result:
         return "builtin" if self.emission is None else self.emission.backend
 
     @property
-    def backend(self) -> str:
-        """str: Short alias for :attr:`emission_backend`."""
-        return self.emission_backend
-
-    @property
     def emitted_circuit(self) -> object:
         """The selected backend artifact; ``circuit`` remains the logical sequence."""
         return self.circuit if self.emission is None else self.emission.circuit
@@ -253,28 +248,12 @@ def synthesize(
     return result
 
 
-def emission_cost(circuit: Circuit, width: int) -> int:
-    """
-    Price a rotation sequence under the cheapest available emission.
-
-    The builtin count charges CNOT ladders with single-pair runs merged into
-    canonical blocks. :mod:`lizzy.emit` also tries its dependency-free signed-GF(2)
-    frame for reducible Pauli spans and, with pytket installed, the established
-    decomposed-box shared-frame pass plus direct optimization of intact Pauli boxes.
-    Whichever exact emission is cheaper is the price, so the emission tier takes part
-    in routing rather than being applied only after it.
-
-    Args:
-        circuit (Circuit): The rotations.
-        width (int): Number of qubits.
-    Returns:
-        int: The two-qubit gate count of the cheaper emission.
-    """
-    return best_emission(circuit, width).two_qubit_gates
-
-
 def _priced_plan(circuit: Circuit, width: int, clusters: int) -> _Plan:
-    """Fold a complete candidate before retaining its cheapest exact emission."""
+    """Fold a complete candidate, then keep the cheapest exact emission as its price.
+
+    Whichever emission is cheaper is what the candidate costs, so the emission tier
+    takes part in routing rather than being applied only after it.
+    """
     logical = fold_phases(circuit)
     quotes = emission_candidates(logical, width, exhaustive=False)
     return _Plan(
@@ -386,7 +365,7 @@ def _synthesize_part(
     if formula is not None:
         candidates.append(formula)
     if steps is None:
-        candidates.append(_chain_plan(part, time, error, order, calibration))
+        candidates.append(_chain_plan(part, len(clusters), time, error, order, calibration))
 
     result.routing_estimated = result.routing_estimated or any(
         candidate.used_estimates for candidate in candidates
@@ -529,7 +508,7 @@ def _cluster_signature(clusters) -> tuple[tuple[str, ...], ...]:
     return tuple(sorted(groups))
 
 
-def _chain_plan(part, time, error, order, calibration):
+def _chain_plan(part, clusters, time, error, order, calibration):
     """Price the requested-order formula sized by the chain bound.
 
     The complete folded sequence is priced so the emission tier sees cancellation
@@ -547,5 +526,5 @@ def _chain_plan(part, time, error, order, calibration):
         ),
         steps,
         n_qubits(part),
-        len(commuting_clusters(part)),
+        clusters,
     )

@@ -302,11 +302,10 @@ def hamiltonian(terms: dict[str, float] | list[tuple[str, float]]) -> PauliStrin
     return PauliStringLinear([(complex(c), s) for s, c in pairs])
 
 
-def _chain(pattern: str, n: int, sites: int | None = None) -> list[str]:
+def _chain(pattern: str, n: int) -> list[str]:
     """Place ``pattern`` at every position along an open chain of ``n`` qubits."""
     width = len(pattern)
-    stop = (n - width + 1) if sites is None else sites
-    return ["I" * w + pattern + "I" * (n - w - width) for w in range(stop)]
+    return ["I" * w + pattern + "I" * (n - w - width) for w in range(n - width + 1)]
 
 
 def model(name: str, n: int, seed: int | None = None) -> PauliStringLinear:

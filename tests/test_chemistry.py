@@ -368,14 +368,12 @@ def _openfermion_matrix(molecular, qubit_order="interleaved"):
 
 
 def test_coulomb_cutoff_uses_ffsim_reconstruction_and_reports_h2_error():
-    ffsim = pytest.importorskip("ffsim")
+    pytest.importorskip("ffsim")
     molecular = _molecule()
     source = to_ffsim(molecular)
     number_form = factorize_molecular_ffsim(source, tol=1e-12)
 
-    truncated, reconstructed = prune_double_factorization(
-        ffsim, source, number_form, cutoff=0.2
-    )
+    truncated, reconstructed = prune_double_factorization(source, number_form, cutoff=0.2)
     restored = truncated.to_molecular_hamiltonian()
     result = synthesize_molecular(
         molecular,

@@ -21,7 +21,7 @@ from lizzy.trotter import product_formula, steps_for
 # Above this the dense reference needs more memory than it is worth.
 VERIFIABLE_QUBITS = 10
 
-# Verifying a circuit costs one 2**n matrix exponential per rotation, so long circuits
+# Verifying a circuit costs one pass over a 2**n matrix per rotation, so long circuits
 # are reported unverified rather than left to run for hours. The same cap keeps the
 # all-product-formula baseline from being built when it would run to millions of gates.
 VERIFIABLE_ROTATIONS = 20_000

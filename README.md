@@ -233,7 +233,7 @@ PauliOpt and [PHOENIX](https://github.com/iqubit-org/phoenix) reorder non-commut
 terms — legitimate for a Trotter approximation, but the circuit then implements a
 different unitary and its gate count is not comparable. Such compilers have to be
 scored on accuracy instead. Scored that way, PHOENIX needs 238 gates where Lizzy needs
-42 (tfim, t=1), 420 against 132 (heisenberg, t=1) and 3 213 against 1 881 (heisenberg,
+42 (tfim, t=1), 420 against 93 (heisenberg, t=1) and 3 213 against 1 206 (heisenberg,
 t=8): it buys cheaper steps with more of them, because reordering costs Trotter
 accuracy. Paulihedral and Tetris are absent because their output could not be verified
 against a reference under any convention tried.
@@ -250,7 +250,8 @@ test suite is built on it. Kernel decompositions self-verify at any width.
 
 The reported gate count is block-aware: a run of consecutive rotations that fits on a
 single qubit pair compiles as one canonical block, charged what its KAK class costs —
-three CNOTs when all three canonical parameters are non-trivial and two otherwise —
+three CNOTs when all three canonical parameters are non-trivial, two when at least
+one is, none when the block is local —
 and a wider rotation pays its CNOT ladder. Pricing the class rather than capping at
 three is what an XY-type bond is worth: the flat cap overcharged 61% of pair blocks in
 a random sweep and never undercharged, so the counts it reported were reachable but

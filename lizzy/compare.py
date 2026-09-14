@@ -56,20 +56,13 @@ def _s2_sequence(hamiltonian_, time_, steps):
     return sequence
 
 
-def qiskit_cx(hamiltonian_, width, time_, steps, rustiq=False, level=3):
-    """Two-qubit count of one Qiskit synthesis path, at ``optimization_level=3``.
-
-    Level 3 is Qiskit's strongest setting; level 1 leaves roughly a factor of two on
-    the table and would flatter this compiler. Prefer :func:`qiskit_best`, which also
-    tries the Rustiq plugin.
-    """
-    from qiskit import QuantumCircuit, transpile
+def _qiskit_circuit(hamiltonian_, width, time_, steps):
+    """The Suzuki-2 evolution as one unsynthesized Qiskit gate; the string reversal is
+    Qiskit's little-endian qubit order."""
+    from qiskit import QuantumCircuit
     from qiskit.circuit.library import PauliEvolutionGate
     from qiskit.quantum_info import SparsePauliOp
     from qiskit.synthesis import SuzukiTrotter
-    from qiskit.transpiler import PassManager
-    from qiskit.transpiler.passes import HighLevelSynthesis
-    from qiskit.transpiler.passes.synthesis import HLSConfig
 
     op = SparsePauliOp.from_list(
         [(str(p)[::-1], c.real) for c, p in terms_of(hamiltonian_)]
@@ -77,6 +70,22 @@ def qiskit_cx(hamiltonian_, width, time_, steps, rustiq=False, level=3):
     gate = PauliEvolutionGate(op, time=time_, synthesis=SuzukiTrotter(order=2, reps=steps))
     circuit = QuantumCircuit(width)
     circuit.append(gate, range(width))
+    return circuit
+
+
+def qiskit_cx(hamiltonian_, width, time_, steps, rustiq=False, level=3):
+    """Two-qubit count of one Qiskit synthesis path, at ``optimization_level=3``.
+
+    Level 3 is Qiskit's strongest setting; level 1 leaves roughly a factor of two on
+    the table and would flatter this compiler. Prefer :func:`qiskit_best`, which also
+    tries the Rustiq plugin.
+    """
+    from qiskit import transpile
+    from qiskit.transpiler import PassManager
+    from qiskit.transpiler.passes import HighLevelSynthesis
+    from qiskit.transpiler.passes.synthesis import HLSConfig
+
+    circuit = _qiskit_circuit(hamiltonian_, width, time_, steps)
     if rustiq:
         config = HLSConfig(PauliEvolution=[("rustiq", {"preserve_order": True})])
         circuit = PassManager([HighLevelSynthesis(hls_config=config)]).run(circuit)
@@ -166,19 +175,9 @@ def oracle_table(error: float = 1e-3) -> None:
         ours = synthesize(h, time=time_, steps=_first_passing(ours_ok))
 
         def qiskit_ok(steps, h=h, time_=time_, target=target):
-            from qiskit import QuantumCircuit, transpile
-            from qiskit.circuit.library import PauliEvolutionGate
-            from qiskit.quantum_info import SparsePauliOp
-            from qiskit.synthesis import SuzukiTrotter
+            from qiskit import transpile
 
-            op = SparsePauliOp.from_list(
-                [(str(p)[::-1], c.real) for c, p in terms_of(h)]
-            )
-            gate = PauliEvolutionGate(
-                op, time=time_, synthesis=SuzukiTrotter(order=2, reps=steps)
-            )
-            circuit = QuantumCircuit(8)
-            circuit.append(gate, range(8))
+            circuit = _qiskit_circuit(h, 8, time_, steps)
             unitary = Operator(
                 transpile(circuit, basis_gates=["cx", "u"]).reverse_bits()
             ).data
