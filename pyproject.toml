@@ -12,7 +12,6 @@ dependencies = [
     "scipy>=1.10",
     "networkx>=3.0",
     "paulie>=0.2.3",
-    "pennylane>=0.38",
     "kak_tools",
 ]
 
