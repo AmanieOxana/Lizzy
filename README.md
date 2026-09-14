@@ -266,13 +266,15 @@ python -m lizzy.compare  # the tables above (needs the compare extra)
 
 ## Install
 
-Python 3.12 or newer is required. Until
-[kak-tools PR #1](https://github.com/QPauLie/kak-tools/pull/1) is released, install
-its tested revision before Lizzy (`kak_tools` is not published on PyPI):
+Python 3.12 or newer is required. `kak_tools` is not on PyPI and cuts no releases,
+so install a pinned revision before Lizzy. The revision matters: since kak-tools
+dropped its `DLAInfo` wrapper, `map_dla_to_irrep` hands back PauLie's
+`Classification` directly, and `lizzy.exact` reads the irrep size off it. Earlier
+revisions return the wrapper and fail here.
 
 ```bash
 python -m pip install \
-  "kak_tools @ git+https://github.com/QPauLie/kak-tools.git@216ee80646f1e1acd77a1be45dc19b604bf953af"
+  "kak_tools @ git+https://github.com/QPauLie/kak-tools.git@3980728596a060a7db2cf5f541a4aaf9011a9b1d"
 python -m pip install -e .
 python -m pip install -e '.[hamlib]'    # Pauli-form HamLib loading
 python -m pip install -e '.[chemistry]' # molecular HamLib + OpenFermion/ffsim/Qiskit

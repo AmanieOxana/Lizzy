@@ -99,7 +99,7 @@ def _irrep(words: tuple[str, ...], width: int) -> tuple:
         return _irrep_cache[words]
 
     mapping, signs, info = map_dla_to_irrep(list(words))
-    m = info.orthogonal_size
+    m = info.get_orthogonal_size()
     basis = labelled_matrix_basis(mapping, signs, info)
 
     generators = {
