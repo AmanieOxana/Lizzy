@@ -119,7 +119,10 @@ def pair_clusters(hamiltonian_: PauliStringLinear) -> list[PauliStringLinear] | 
     weight_of = {s: sum(abs(c) for c, _ in group) for s, group in pairs.items()}
     for coefficient, pauli in fields:
         qubit = next(iter(pauli.get_support()))
-        homes = [s for s in pairs if qubit in s]
+        # Only original two-qubit supports have pair weights. A preceding field
+        # may have created a singleton kernel; another axis on that same qubit
+        # should join it, not look up a nonexistent pair weight.
+        homes = [s for s in weight_of if qubit in s]
         home = max(homes, key=lambda s: weight_of[s]) if homes else (qubit,)
         pairs.setdefault(home, []).append((coefficient, pauli))
 

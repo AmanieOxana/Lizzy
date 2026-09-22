@@ -9,6 +9,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from paulie.common.pauli_string_linear import PauliStringLinear
 
@@ -32,6 +33,9 @@ from lizzy.hamiltonian import (
 )
 from lizzy.kernels import compile_layer
 from lizzy.symmetry import commuting_clusters, pair_clusters, z2_symmetries
+
+if TYPE_CHECKING:
+    from lizzy.wei_norman import WeiNormanResult
 
 # What an exact-branch attempt can raise when the classification admits an algebra but
 # the upstream irrep machinery cannot realize this particular generator set in it.
@@ -62,6 +66,8 @@ class Result:
         emission (EmissionQuote, optional): The concrete backend artifact selected for
             the complete folded circuit. The logical Pauli sequence remains in
             ``circuit`` for provenance and verification.
+        numerical (WeiNormanResult, optional): Diagnostics for the explicitly
+            requested numerical Wei–Norman route, otherwise ``None``.
     """
 
     circuit: Circuit
@@ -74,6 +80,7 @@ class Result:
     error_guaranteed: bool = True
     routing_estimated: bool = False
     emission: EmissionQuote | None = None
+    numerical: "WeiNormanResult | None" = None
 
     @property
     def logical_two_qubit_gates(self) -> int:
@@ -90,6 +97,8 @@ class Result:
     @property
     def emission_backend(self) -> str:
         """str: Name of the backend that won the complete-circuit portfolio."""
+        if self.numerical is not None:
+            return self.numerical.emission_backend
         return "builtin" if self.emission is None else self.emission.backend
 
     @property
@@ -157,9 +166,20 @@ def synthesize(
     randomized: bool = False,
     calibration: float = 1.0,
     steps: int | None = None,
+    *,
+    method: str = "auto",
+    numerical_options: dict | None = None,
 ) -> Result:
     r"""
     Synthesize :math:`e^{-itH}` for a Pauli Hamiltonian.
+
+    ``method='auto'`` retains the established static router and its error contract.
+    ``method='wei-norman'`` explicitly requests numerical Lie-coordinate synthesis
+    and concrete phase-preserving native gate emission. That route does NOT promise
+    the ``error`` budget: ``numerical_options`` passes local tolerances and resource
+    limits to :func:`lizzy.wei_norman.synthesize_wei_norman`. Its diagnostics are in
+    ``result.numerical`` and ``error_guaranteed`` is always false. Product-formula
+    controls cannot be combined with the explicit numerical route.
 
     Every manageable candidate the classification allows is priced per part and the
     cheapest circuit wins -- exactness is not a priority order:
@@ -203,6 +223,28 @@ def synthesize(
         records whether anything was actually sampled; ``error_guaranteed`` and
         ``routing_estimated`` distinguish accuracy from cost-model status.
     """
+    if method not in {"auto", "wei-norman"}:
+        raise ValueError("method must be 'auto' or 'wei-norman'")
+    if numerical_options is not None and not isinstance(numerical_options, dict):
+        raise TypeError("numerical_options must be a dict or None")
+    if method == "wei-norman":
+        from lizzy.wei_norman import synthesize_wei_norman
+
+        if steps is not None or randomized or calibration != 1.0 or order != 4 or seed is not None:
+            raise ValueError("product-formula controls cannot be used with method='wei-norman'")
+        compiled = synthesize_wei_norman(hamiltonian_, time, **(numerical_options or {}))
+        return Result(
+            circuit=compiled.circuit,
+            algebra=f"Pauli closure (dimension {compiled.dimension})",
+            summands=len(compiled.component_bases),
+            symmetries=len(z2_symmetries(hamiltonian_)),
+            routes=sorted(set(compiled.circuit.provenance)),
+            error_guaranteed=False,
+            emission=compiled.emission,
+            numerical=compiled,
+        )
+    if numerical_options is not None:
+        raise ValueError("numerical_options requires method='wei-norman'")
     parts = summands(hamiltonian_)
     terms_count = len(terms_of(hamiltonian_))
     # Naming the algebra is reporting, not routing, and classification at dense sizes

@@ -9,7 +9,13 @@ from paulie.common.pauli_string_factory import get_pauli_string
 from lizzy.dense import circuit_matrix, infidelity
 from lizzy.emit import best_emission
 from lizzy.hamiltonian import Circuit, anticommutation_matrix, hamiltonian
-from lizzy.native import NativeCircuit, NativeGate, frame_profile, native_frame_circuit
+from lizzy.native import (
+    NativeCircuit,
+    NativeGate,
+    frame_profile,
+    ladder_circuit,
+    native_frame_circuit,
+)
 from lizzy.synthesize import synthesize
 
 
@@ -21,9 +27,93 @@ def _circuit(rotations: list[tuple[str, float]]) -> Circuit:
 
 
 def _assert_exact(logical: Circuit, emitted: NativeCircuit, width: int) -> None:
-    assert infidelity(circuit_matrix(logical, width), emitted.get_unitary()) < 1e-12
+    target = circuit_matrix(logical, width)
+    assert infidelity(target, emitted.get_unitary()) < 1e-12
+    assert np.allclose(target, emitted.get_unitary(), rtol=0, atol=2e-12)
     assert emitted.n_2qb_gates() == sum(gate.kind == "cx" for gate in emitted.gates)
     assert all(isinstance(gate, NativeGate) for gate in emitted.gates)
+
+
+def test_native_emission_preserves_identity_rotations_as_absolute_phase() -> None:
+    large = 10_000 * np.pi + 0.37
+    logical = _circuit(
+        [
+            ("II", large),
+            ("XI", 0.23),
+            ("ZI", -0.41),
+            ("II", -7 * np.pi + 0.19),
+            ("YI", 0.17),
+        ]
+    )
+
+    emitted = native_frame_circuit(logical, 2)
+
+    assert emitted.global_phase == pytest.approx(-large + 7 * np.pi - 0.19)
+    _assert_exact(logical, emitted, 2)
+
+
+def test_ladder_circuit_is_an_absolute_phase_preserving_generic_fallback() -> None:
+    logical = _circuit(
+        [
+            ("XYZ", 0.23),
+            ("III", 13 * np.pi + 0.11),
+            ("ZXI", -0.31),
+            ("IYY", 0.19),
+        ]
+    )
+
+    emitted = ladder_circuit(logical, 3)
+
+    assert emitted.two_qubit_gates == 8
+    assert emitted.global_phase == pytest.approx(-(13 * np.pi + 0.11))
+    _assert_exact(logical, emitted, 3)
+
+
+def test_native_qasm3_is_deterministic_and_round_trip_precise() -> None:
+    phase = float(np.nextafter(-0.2, -1.0))
+    angle = float(np.nextafter(0.1, 1.0))
+    emitted = NativeCircuit(2, global_phase=phase)
+    for gate in [
+        NativeGate("h", (0,)),
+        NativeGate("s", (1,)),
+        NativeGate("sdg", (0,)),
+        NativeGate("cx", (0, 1)),
+        NativeGate("rz", (1,), angle),
+    ]:
+        emitted.append(gate)
+
+    expected = (
+        "OPENQASM 3.0;\n"
+        'include "stdgates.inc";\n'
+        "qubit[2] q;\n"
+        f"gphase({phase!r});\n"
+        "h q[0];\n"
+        "s q[1];\n"
+        "inv @ s q[0];\n"
+        "cx q[0], q[1];\n"
+        f"rz({angle!r}) q[1];\n"
+    )
+    assert emitted.to_qasm3() == expected
+    assert emitted.to_qasm3() == expected
+    assert NativeCircuit(0, global_phase=phase).to_qasm3() == (
+        "OPENQASM 3.0;\n"
+        'include "stdgates.inc";\n'
+        f"gphase({phase!r});\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: NativeCircuit(1, global_phase=np.inf),
+        lambda: NativeCircuit(1.5),
+        lambda: NativeGate("rz", (0,), np.nan),
+        lambda: NativeGate("h", (0.5,)),
+    ],
+)
+def test_native_values_reject_nonfinite_angles_and_fractional_indices(factory) -> None:
+    with pytest.raises(ValueError):
+        factory()
 
 
 def test_so3_frame_localizes_three_dependent_axes_once() -> None:

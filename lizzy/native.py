@@ -17,6 +17,7 @@ native backend is a monotone addition rather than a new routing assumption.
 """
 
 from dataclasses import dataclass, field
+from operator import index as integer_index
 
 import numpy as np
 
@@ -24,6 +25,17 @@ from lizzy import gf2
 from lizzy.hamiltonian import Circuit, symplectic_vectors
 
 _ARITY = {"h": 1, "s": 1, "sdg": 1, "cx": 2, "rz": 1}
+
+
+def _finite_float(value: object, name: str) -> float:
+    """Return one finite real scalar with a stable plain-Python representation."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be a finite real number.") from exc
+    if not np.isfinite(parsed):
+        raise ValueError(f"{name} must be a finite real number.")
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -42,6 +54,13 @@ class NativeGate:
     def __post_init__(self) -> None:
         if self.kind not in _ARITY:
             raise ValueError(f"Unsupported native gate {self.kind!r}.")
+        try:
+            qubits = tuple(integer_index(qubit) for qubit in self.qubits)
+        except TypeError as exc:
+            raise ValueError("Native gate qubits must be integer indices.") from exc
+        if any(isinstance(qubit, (bool, np.bool_)) for qubit in self.qubits):
+            raise ValueError("Native gate qubits must be integer indices.")
+        object.__setattr__(self, "qubits", qubits)
         if len(self.qubits) != _ARITY[self.kind]:
             raise ValueError(
                 f"Gate {self.kind!r} needs {_ARITY[self.kind]} qubits, "
@@ -53,6 +72,8 @@ class NativeGate:
             raise ValueError("A native two-qubit gate needs distinct qubits.")
         if (self.kind == "rz") != (self.angle is not None):
             raise ValueError("Only rz gates carry an angle, and every rz needs one.")
+        if self.kind == "rz":
+            object.__setattr__(self, "angle", _finite_float(self.angle, "rz angle"))
 
     def inverse(self) -> "NativeGate":
         """Return the exact inverse gate."""
@@ -68,14 +89,27 @@ class NativeGate:
 
 @dataclass
 class NativeCircuit:
-    """Concrete ``H/S/Sdg/CX/Rz`` circuit emitted without an SDK dependency."""
+    r"""Concrete ``H/S/Sdg/CX/Rz`` circuit emitted without an SDK dependency.
+
+    ``global_phase`` is in radians: the represented unitary is
+    :math:`e^{i\,\mathtt{global\_phase}}` times the ordered gate product.
+    """
 
     width: int
     gates: list[NativeGate] = field(default_factory=list)
+    global_phase: float = 0.0
 
     def __post_init__(self) -> None:
+        try:
+            width = integer_index(self.width)
+        except TypeError as exc:
+            raise ValueError("A circuit width must be a non-negative integer.") from exc
+        if isinstance(self.width, (bool, np.bool_)):
+            raise TypeError("A circuit width must be a non-negative integer.")
+        self.width = width
         if self.width < 0:
-            raise ValueError("A circuit width cannot be negative.")
+            raise ValueError("A circuit width must be a non-negative integer.")
+        self.global_phase = _finite_float(self.global_phase, "global_phase")
         for gate in self.gates:
             self._validate_gate(gate)
 
@@ -89,6 +123,14 @@ class NativeCircuit:
         """Append one validated gate."""
         self._validate_gate(gate)
         self.gates.append(gate)
+
+    def add_global_phase(self, angle: float) -> None:
+        """Add a finite phase angle in radians."""
+        current = _finite_float(self.global_phase, "global_phase")
+        contribution = _finite_float(angle, "global phase contribution")
+        self.global_phase = _finite_float(
+            current + contribution, "global_phase"
+        )
 
     @property
     def two_qubit_gates(self) -> int:
@@ -104,10 +146,31 @@ class NativeCircuit:
         if self.width > 10:
             raise ValueError("Dense native-circuit verification is capped at 10 qubits.")
         dimension = 2**self.width
-        total = np.eye(dimension, dtype=complex)
+        phase = _finite_float(self.global_phase, "global_phase")
+        total = np.exp(1j * phase) * np.eye(dimension, dtype=complex)
         for gate in self.gates:
             total = self._gate_matrix(gate) @ total
         return total
+
+    def to_qasm3(self) -> str:
+        """Serialize deterministically as dependency-free OpenQASM 3 text."""
+        phase = _finite_float(self.global_phase, "global_phase")
+        lines = ["OPENQASM 3.0;", 'include "stdgates.inc";']
+        if self.width:
+            lines.append(f"qubit[{self.width}] q;")
+        if phase != 0.0:
+            lines.append(f"gphase({phase!r});")
+
+        for gate in self.gates:
+            operands = ", ".join(f"q[{qubit}]" for qubit in gate.qubits)
+            if gate.kind == "rz":
+                assert gate.angle is not None
+                lines.append(f"rz({gate.angle!r}) {operands};")
+            elif gate.kind == "sdg":
+                lines.append(f"inv @ s {operands};")
+            else:
+                lines.append(f"{gate.kind} {operands};")
+        return "\n".join(lines) + "\n"
 
     def _gate_matrix(self, gate: NativeGate) -> np.ndarray:
         if gate.kind == "cx":
@@ -461,7 +524,10 @@ def _append_pauli_gadget(
     width = emitted.width
     support = _support(vector, width)
     if not support:
-        return  # An identity rotation contributes only an ignored global phase.
+        # exp(-i angle I) is observable only as a global phase, but retaining it is
+        # necessary when this artifact is composed with controlled operations.
+        emitted.add_global_phase(-angle)
+        return
 
     basis = []
     for qubit in support:
@@ -476,7 +542,7 @@ def _append_pauli_gadget(
     for gate in basis + parity:
         emitted.append(gate)
     emitted.append(NativeGate("rz", (pivot,), 2 * angle))
-    for gate in reversed(parity + basis):
+    for gate in reversed(basis + parity):
         emitted.append(gate.inverse())
 
 
@@ -523,9 +589,12 @@ def _rolling_frame_circuit(
                 _apply_frame_gate(frame, frame_gates, gate)
                 emitted.append(gate)
 
-        _, transformed = frame.transform(vector)
+        sign, transformed = frame.transform(vector)
         support = _support(transformed, width)
         if not support:
+            _append_pauli_gadget(
+                emitted, transformed, -angle if sign else angle
+            )
             continue
         candidates = []
         for pivot in support:
@@ -554,6 +623,26 @@ def _rolling_frame_circuit(
 
     for gate in reversed(frame_gates):
         emitted.append(gate.inverse())
+    return emitted
+
+
+def ladder_circuit(circuit: Circuit, width: int) -> NativeCircuit:
+    """Lower every Pauli rotation to an independently uncomputed native gadget.
+
+    This is the concrete dependency-free fallback: it preserves input order and
+    absolute global phase, and makes no shared-frame optimization assumption.
+    """
+    try:
+        parsed_width = integer_index(width)
+    except TypeError as exc:
+        raise ValueError("A circuit width must be a non-negative integer.") from exc
+    if isinstance(width, (bool, np.bool_)) or parsed_width < 0:
+        raise ValueError("A circuit width must be a non-negative integer.")
+
+    vectors, _ = _unique_vectors(circuit, parsed_width)
+    emitted = NativeCircuit(parsed_width)
+    for vector, (_, angle) in zip(vectors, circuit.rotations):
+        _append_pauli_gadget(emitted, vector, angle)
     return emitted
 
 

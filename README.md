@@ -7,6 +7,10 @@ routes alongside product-formula and emission alternatives. For generic chemistr
 the DLA is a filter and special-case detector, not a cost predictor. Representation-
 dependent Pauli structure guides emission, while fermionic structure is retained for
 explicit molecular routes and future accuracy-matched selection.
+Opt-in numerical small-DLA synthesis provides static/driven Wei–Norman circuits
+and Magnus4/Fer4 prototypes, with empirical accuracy/cost comparisons rather than
+certified error budgets. Wei–Norman includes phase-preserving native gate emission
+and OpenQASM 3 export.
 
 Named in honor of [Elizabeth Meckes](https://en.wikipedia.org/wiki/Elizabeth_Meckes)
 (1980–2020), mathematician of the classical compact groups — the exact branch of this
@@ -142,6 +146,243 @@ the coefficients rather than the term count. It is off by default and stays off:
 its guarantee is on the averaged channel, not on the circuit you get, so a route
 that wins on gate count can still miss the budget it was sized for.
 
+## Numerical Wei–Norman synthesis
+
+`lizzy.wei_norman.synthesize_wei_norman` compiles static or time-dependent Pauli
+Hamiltonians into concrete `H/S/Sdg/CX/Rz` gates, with global phase retained and
+OpenQASM 3 export. This is a numerical implementation of an established method,
+not a newly discovered decomposition or a universally better synthesis route.
+
+```python
+import numpy as np
+from lizzy.driven import DrivenHamiltonian
+from lizzy.wei_norman import synthesize_wei_norman
+
+drive = DrivenHamiltonian(
+    ["XXX", "XXY", "IIZ"],
+    lambda t: [np.cos(1.7 * t), np.sin(1.7 * t), 0.3],
+)
+result = synthesize_wei_norman(drive, (0.0, 1.2), max_step=0.02)
+result.circuit                   # logical Pauli rotations
+result.emitted_circuit           # concrete NativeCircuit, including global_phase
+result.two_qubit_gates           # actual CX count of that artifact
+result.component_dimensions      # (3,)
+result.rhs_evaluations           # includes rejected integration attempts
+qasm = result.emitted_circuit.to_qasm3()
+```
+
+The same route is explicitly available through the main static API:
+
+```python
+from lizzy.hamiltonian import model
+from lizzy.synthesize import synthesize
+
+result = synthesize(
+    model("tfim", 3), time=1.0, method="wei-norman",
+    numerical_options={"rtol": 1e-10, "atol": 1e-12},
+)
+result.numerical.charts
+result.error_guaranteed          # False: the requested static `error` is NOT certified
+```
+
+The default `method="auto"` keeps the established static router and its error
+contract; it does **not** silently introduce an uncertified numerical candidate.
+Product-formula settings such as `steps` cannot be combined with the explicit
+Wei–Norman route. Local solver tolerances belong in `numerical_options`.
+
+The end-to-end interface adds:
+
+- Structural splitting into anticommutation-connected control components. Different
+  components commute at **all pairs of times**, so separate integration introduces
+  no splitting error. This can handle many independent small algebras without one
+  large Jacobian. `split_components=False` enables an explicit unsplit comparison.
+- Per-component closure limits (`max_dimension=32`), a total closure limit
+  (`max_total_dimension=1024`), and shared RHS/chart budgets across every component
+  and pulse interval. All closures are checked before a driven callback is evaluated.
+- Explicit `breakpoints=[...]` for known pulse discontinuities, in integration
+  order. Each pulse uses one-sided endpoint values. Callbacks must be deterministic
+  and all potentially active controls must be declared. Smooth controls still need
+  an appropriate `max_step`; unannounced narrow pulses can be missed.
+- Direct angles for static commuting components, and phase-preserving native
+  emission for the complete result. The fixed portfolio compares actual ladder
+  and eligible shared-frame circuits, including their entry/exit gates, by CX then
+  total gate count. `emission="ladder"` forces the fallback; `"none"` skips emission.
+
+`logical_two_qubit_gates` retains Lizzy's existing block-aware **cost estimate**;
+it is not interchangeable with the concrete native gate count. No dense
+`2**n` matrix is constructed by this synthesis interface. Neither numerical
+integration nor chart restarts supply a global error bound or optimality guarantee.
+
+### Low-level driven solver
+
+`lizzy.driven` adds an explicit numerical Wei–Norman route for
+`H(t) = sum_j c_j(t) P_j`. It closes the declared Pauli controls under commutators,
+constructs their adjoint actions using PauLie products, integrates scalar angle
+equations with SciPy, and returns the same `Circuit` used by Lizzy's emitters. It
+does not construct a `2**n` matrix during synthesis or change the default static router.
+
+```python
+import numpy as np
+from lizzy.driven import DrivenHamiltonian, synthesize_driven
+from lizzy.emit import best_emission
+
+drive = DrivenHamiltonian(
+    ["X", "Y", "Z"],
+    lambda t: [np.cos(1.7 * t), np.sin(1.7 * t), 0.3],
+)
+result = synthesize_driven(drive, (0.0, 1.2), max_step=0.02)
+result.dimension          # 3: the full control-generated Pauli closure
+result.chart_restarts     # extra local coordinate charts used
+result.error_guaranteed   # False: local ODE tolerances are not a global error bound
+emission = best_emission(result.circuit, drive.n_qubits)
+```
+
+The method is established [Wei–Norman/Lie-algebra decoupling](https://doi.org/10.1103/PRXQuantum.6.010201),
+not a new Lizzy decomposition theorem. The prototype supports real, smooth control
+callbacks at absolute time, forward/backward intervals, central identity phases,
+and explicit permutations of the full factor basis. It caps closure dimension
+(32 by default), bounds numerical work, and retries shorter intervals when chart
+angles or Jacobian conditioning become unsafe. Central generators do not require
+chart restarts. Failures raise instead of returning a partial circuit.
+
+This is numerical synthesis without a Trotter splitting, **not** certified exact
+synthesis: integration error remains, conditioning is sampled, and chart restarts
+can make depth grow with time. Supply every potentially active Pauli control even
+if initially zero; set `max_step` to resolve the fastest control timescale and split
+discontinuous pulses into separate calls. The full closure may still be exponential,
+so no generic molecular-chemistry advantage is implied.
+
+Symdyn already derives Wei–Norman equations **and numerically integrates them**
+through `scipy_solve` ([source](https://gitlab.com/VolodyaCO/dynamics-of-sun-systems/-/blob/main/src/symdyn/algebra.py)). Its
+[current dependency constraints](https://gitlab.com/VolodyaCO/dynamics-of-sun-systems/-/blob/main/pyproject.toml)
+include NumPy 1.26 and an older JAX stack; this Pauli-only numerical prototype uses
+Lizzy's existing PauLie/SciPy dependencies rather than adding a symbolic engine.
+General symbolic or numerical Wei–Norman automation is not claimed as a Lizzy
+contribution. The mapping from driven equations to sequential gate parameters
+also predates this implementation ([Altafini, 2002](https://arxiv.org/abs/quant-ph/0203005));
+more recent chemistry work constructs compact Wei–Norman excitation circuits
+([Magoulas–Evangelista](https://arxiv.org/abs/2511.13485)). We do not claim the first
+Wei–Norman circuit-synthesis software.
+
+### Magnus4 and Fer4
+
+`lizzy.expansions` provides the published fourth-order Gauss–Legendre Magnus and
+two-factor Fer schemes ([Blanes et al., equations 22–24](https://personales.upv.es/serblaza/2011EncyclopediaFerMagnus.pdf)).
+Each time step samples two control vectors and collects their commutators in the
+bounded Pauli closure. Magnus4 produces one effective exponential per step; Fer4
+produces up to two, including the nested-commutator correction needed for fourth
+order. Both are implemented in coefficient space, without dense qubit matrices.
+
+```python
+from lizzy.expansions import expand_driven, synthesize_expansion
+
+plan = expand_driven(drive, (0.0, 1.2), method="magnus4", steps=32)
+plan.exponentials         # 32 Pauli-SUM exponentials, not 32 gates
+result = synthesize_expansion(drive, (0.0, 1.2), method="fer4", steps=32)
+result.exponentials       # 64 before compiling them into Pauli rotations
+result.circuit           # ordinary Lizzy Circuit; all emitted rotations are charged
+result.compilation_segments
+result.error_guaranteed   # False
+```
+
+`ExpansionPlan.factors` are coefficient vectors in circuit application order:
+each represents `exp(-i sum_j factor[j] * P_j)`. Mutually commuting active terms
+emit directly; noncommuting exponentials reuse the numerical Wei–Norman compiler.
+`rtol`/`atol` control that internal synthesis, **not** Magnus/Fer truncation error.
+The expansion step count is explicit, closure and factor counts are capped, and
+the numerical work budget is shared across all factors. Reverse-time intervals,
+central identity phases, and zero-duration evolutions are supported. Fer4 is not
+exactly time-reversal symmetric at finite step size.
+
+Quadrature, truncated time ordering, and numerical gate synthesis are separate
+error sources. The methods preserve unitary circuit structure but do not certify
+accuracy; neither two control samples nor local ODE tolerances establish a global
+error bound. Resolve fast controls with the time-step mesh and split discontinuous
+pulses. For static `H`, the correction vanishes: `exp(-itH)` still needs synthesis.
+Interaction-picture selection and automatic numerical method selection remain future work.
+
+### Empirical driven benchmarks
+
+Run `python -m lizzy.driven_bench` for driven-spin and three-qubit Ising checks against
+analytic or independent dense references. Wei–Norman, Magnus4, Fer4 and a midpoint
+second-order product formula share a measured operator-error threshold. All use the
+same fixed concrete native-ladder/native-frame emission portfolio; the benchmark also reports
+logical counts so savings erased by shared-frame emission remain visible. These
+small-instance checks are empirical, not certified error bounds or a routing policy.
+[Recorded results](docs/driven_benchmark.txt) at operator-error threshold `1e-6`:
+
+| Case | Closure dimension | Wei–Norman CX | Magnus4 CX | Fer4 CX | Midpoint-S2 CX |
+|---|---:|---:|---:|---:|---:|
+| Rotating spin | 3 | 0 | 0 | 0 | 0 |
+| Encoded spin (`XXX`, `XXY`, `IIZ`) | 3 | 4 | 4 | 4 | 4 |
+| Driven three-qubit TFIM | 15 | 256 | 512 | 1,024 | 4,100 |
+
+These columns count actual emitted CX gates. Earlier TFIM values of 160/320/640
+were analytical pair-block estimates, not gates emitted by this portfolio; the
+benchmark now keeps those estimates only in the separate `logical_CX` column.
+
+The product-formula search first passes at 1,024 steps in each case. Magnus4/Fer4
+use 32 steps on the spins and 16 on TFIM; Wei–Norman uses eight charts on TFIM.
+Expansion plans are screened against dense references on a power-of-two grid
+before compilation; the final compiled/emitted circuit must independently pass.
+This is a small-instance oracle benchmark, not deployable accuracy-based routing
+or a minimal-step claim. The output separates `plan_error` (before compilation)
+from `op_error` (total error of the final circuit), and abstract factor counts from
+rotation/CX counts. `--max-expansion-steps` and `--max-steps` bound the two searches;
+an unmet target produces a failing exit status.
+
+On TFIM, Magnus4's total error is `7.64e-8` and Fer4's is `4.44e-7`, but the existing
+Wei–Norman route still emits fewer CX. The encoded spin has no additional CX saving
+after the common shared-frame emitter. These comparisons are not against all
+available driven/free-fermion methods and are not evidence of a chemistry advantage.
+
+### Broader synthesis comparison: Wei–Norman is not always better
+
+Run `python -m lizzy.synthesis_bench` for 14 reproducible static and driven cases:
+commuting controls, physical/encoded spins, independent commuting `su(2)` factors,
+short/medium/long TFIM evolution, generic `su(4)`, and a `su(8)` closure-cap case.
+Use `--case short-tfim3` to select a case or `--json` for case definitions, versions,
+settings, error measurements and timings. A complete
+[recorded run](docs/wei_norman_benchmark.json) contains 33 passing comparisons,
+eight unsupported static-exact cases, and one explicit Wei–Norman closure cap.
+The comparison includes Wei–Norman,
+midpoint-S2, and the existing static exact route wherever supported.
+
+All methods share a fixed **concrete native ladder/shared-frame portfolio**.
+Counts below are actual CX gates in the emitted artifacts, not block-aware
+logical estimates. Default measured threshold: `1e-6`.
+
+| Case | Wei–Norman CX | Midpoint-S2 CX | Static exact CX |
+|---|---:|---:|---:|
+| Short TFIM3, `t=0.003` | 32 | **8** | 28 |
+| Static TFIM3, `t=1` | 256 | 2,052 | **28** |
+| Long TFIM3, `t=5` | 1,024 | 16,388 | **28** |
+| Driven TFIM3 | **256** | 4,100 | unsupported |
+| Driven encoded spin | 4 | 4 | unsupported |
+
+The static exact solver returns the spin-cover representative up to global phase;
+PASS for that route uses the reported trace-phase-aligned operator norm. The
+strict operator error is printed separately (including a value of 2 for `-U`).
+Wei–Norman must additionally pass the **strict**, phase-preserving norm. Emitted
+and logical circuits must agree in strict norm for every route. None of these
+empirical checks is a certified global error bound.
+
+Other qualifications matter: the encoded-spin CX tie hides 55 versus 10,257 total
+native gates; the full `su(8)` case exceeds the default Wei–Norman dimension cap
+while the product formula succeeds. The cap is configurable: running that case
+with `--max-dimension 64` succeeds at dimension 63 with 324 Wei–Norman CX versus
+512 product-formula CX, at higher classical compilation cost. Known unsupported exact embeddings are
+reported with reasons, not omitted or counted as wins. `CAP`, `UNSUPPORTED`,
+integration failures and exhausted step searches remain visible in the output.
+
+Timings separate final synthesis/emission from the product-formula accuracy search
+and dense verification, and are single-run wall times with ordinary caches—not
+controlled performance measurements. The power-of-two step search and dense
+references are small-instance oracles, not a scalable automatic router. Even
+allowing the product formula these oracle-selected steps does not make either
+method universally dominant. This supports a **portfolio of routes**, not replacing
+the existing exact and product-formula methods with Wei–Norman everywhere.
+
 ## Measured
 
 Fifteen HamLib instances, the same fixed-depth task for every compiler (two Suzuki-2
@@ -247,6 +488,9 @@ priced-candidate interface.
 `lizzy.dense` rebuilds circuits as 2^n matrices and compares them to `expm(-itH)`,
 so every exactness claim is checked at the qubit level wherever size allows; the
 test suite is built on it. Kernel decompositions self-verify at any width.
+Driven routes additionally use analytic rotating-field solutions and independent
+dense ODE references. Magnus/Fer tests check fourth-order convergence, quadrature
+error, factor order, global phase, and numerical compilation separately.
 
 The reported gate count is block-aware: a run of consecutive rotations that fits on a
 single qubit pair compiles as one canonical block, charged what its KAK class costs —
@@ -261,6 +505,7 @@ Jordan-Wigner, where the cap said 1 063).
 
 ```bash
 pytest                   # dense/unit checks; HamLib archives download on first use
+python -m lizzy.driven_bench  # empirical, accuracy-matched driven-spin checks
 python -m lizzy.bench    # per-instance route, cost, achieved error
 python -m lizzy.compare  # the tables above (needs the compare extra)
 ```
@@ -407,6 +652,10 @@ so the condition can be ruled out by the cheap claw-free half and never ruled in
 
 - Kökcü et al., [Fixed depth Hamiltonian simulation via Cartan decomposition](https://doi.org/10.1103/PhysRevLett.129.070501) — the exact branch
 - Wierichs et al., [Recursive Cartan decompositions for unitary synthesis](https://arxiv.org/abs/2503.19014) — what kak-tools implements
+- Qvarfort & Pikovski, [Solving quantum dynamics with a Lie-algebra decoupling method](https://doi.org/10.1103/PRXQuantum.6.010201) — the experimental driven Wei–Norman route
+- Martínez-Tibaduiza et al., [Symdyn: An automated algebraic solution for high-order quantum systems](https://doi.org/10.1103/24r3-j9zy) — existing symbolic Wei–Norman automation
+- Blanes et al., [Magnus and Fer expansions for matrix differential equations: the convergence problem](https://doi.org/10.1088/0305-4470/31/1/023) — expansion/convergence background; no global certificate claimed here
+- Blanes et al., [The Fer and Magnus expansions](https://personales.upv.es/serblaza/2011EncyclopediaFerMagnus.pdf) — equations 22–24 implemented by the Magnus4/Fer4 routes
 - Wiersema et al., [Classification of dynamical Lie algebras of 2-local spin systems](https://doi.org/10.1038/s41534-024-00900-2) — why polynomial DLAs are a chain phenomenon
 - Childs et al., [Theory of Trotter error with commutator scaling](https://doi.org/10.1103/PhysRevX.11.011020) — the step counts
 - Decker et al., [Kernpiler](https://arxiv.org/abs/2504.07214) — partial Trotterization, the kernels
