@@ -38,6 +38,14 @@ def test_commuting_static_components_need_no_ode_evaluations():
     assert np.linalg.norm(result.emitted_circuit.get_unitary() - evolution(h, -1.4), 2) < 1e-11
 
 
+@pytest.mark.parametrize("chart_radius", [None, 0.5])
+def test_chart_policies_are_valid_for_direct_static_components(chart_radius):
+    h = hamiltonian({"X": 1.3, "I": -0.2})
+    result = synthesize_wei_norman(h, 1.0, chart_radius=chart_radius)
+    assert result.rhs_evaluations == 0
+    assert np.linalg.norm(result.emitted_circuit.get_unitary() - evolution(h, 1.0), 2) < 1e-11
+
+
 def test_structural_splitting_matches_unsplit_driven_evolution():
     drive = DrivenHamiltonian(["XI", "ZI", "IX", "IY"], lambda t: [0.2 + t, -0.3, np.cos(t), t])
     split = synthesize_wei_norman(drive, (0.2, 0.5), max_dimension=3)

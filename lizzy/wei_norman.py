@@ -158,7 +158,7 @@ def synthesize_wei_norman(
     rtol: float = 1e-9,
     atol: float = 1e-11,
     max_step: float = np.inf,
-    chart_radius: float = 0.5,
+    chart_radius: float | None = None,
     condition_limit: float = 100.0,
     max_segments: int = 1024,
     max_rhs_evaluations: int = 100_000,
@@ -185,6 +185,12 @@ def synthesize_wei_norman(
     numerical charts; their circuit length can grow with time and their integration
     cost with algebra dimension. This is NOT an always-better or globally optimal
     synthesis method, nor do ``rtol``/``atol`` bound final operator error.
+
+    ``chart_radius=None`` (default) keeps a compact product while sampled
+    Jacobian conditioning permits it, with bounded restarts on rejected trials.
+    An explicit ``chart_radius=0.5`` restores the conservative noncentral-angle
+    cap. RHS and accepted-mesh checks are not a continuous nonsingularity
+    guarantee; set ``max_step`` to resolve the controls' fastest timescale.
 
     ``emission='native'`` selects the smaller concrete ladder or eligible shared
     Clifford-frame artifact by (CX count, total gate count); it is independent of

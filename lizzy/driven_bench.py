@@ -193,6 +193,7 @@ def main() -> int:
     print("Magnus/Fer use dense ideal-plan screening on the same grid; final circuits are verified.")
     print("Fixed portfolio: concrete native-ladder + eligible, dense-verified native-frame.")
     print("Charts count WN compilation segments; plan_error excludes compilation, op_error includes it.")
+    print("Wei-Norman chart policy: compact (chart_radius=None), sampled condition-limited restarts.")
     print("case            route        dim charts  steps  exps rotations logical_CX emitted_CX backend      plan_error   op_error status")
     success = True
     for case in _cases():

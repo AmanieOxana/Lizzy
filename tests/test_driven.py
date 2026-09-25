@@ -34,13 +34,15 @@ def rotating_field(words=("X", "Y", "Z")):
 
 @pytest.mark.parametrize("words", [("X", "Y", "Z"), ("XIX", "XIY", "IIZ")])
 @pytest.mark.parametrize("span", [(0.0, 1.2), (0.3, 1.8), (1.8, 0.3)])
-def test_driven_rotation_matches_analytic_solution(words, span):
+@pytest.mark.parametrize("chart_radius", [None, 0.5])
+def test_driven_rotation_matches_analytic_solution(words, span, chart_radius):
     h, reference = rotating_field(words)
-    result = synthesize_driven(h, span)
+    result = synthesize_driven(h, span, chart_radius=chart_radius, max_step=0.025)
     actual = circuit_matrix(result.circuit, h.n_qubits)
     assert np.linalg.norm(actual - reference(*span), 2) < 2e-8
     assert result.dimension == 3
-    assert result.chart_restarts > 0
+    if chart_radius is not None:
+        assert result.chart_restarts > 0
     assert not result.error_guaranteed
     assert result.intervals[0][0] == span[0]
     assert result.intervals[-1][1] == span[1]
@@ -152,7 +154,7 @@ def test_identically_zero_controls_emit_identity():
 def test_restarts_cross_an_euler_chart_singularity():
     # In the X,Y,Z chart a single H=Y solution reaches det M=0 at pi/4.
     h = DrivenHamiltonian(["X", "Y", "Z"], lambda t: [0, 1, 0])
-    result = synthesize_driven(h, (0, 2), basis_order=["X", "Y", "Z"])
+    result = synthesize_driven(h, (0, 2), basis_order=["X", "Y", "Z"], max_step=0.005)
     assert result.rejected_intervals > 0
     assert result.chart_restarts > 0
     assert np.linalg.norm(circuit_matrix(result.circuit, 1)
@@ -232,7 +234,7 @@ def test_invalid_time_span(span):
 def test_work_budgets_raise_instead_of_returning_partial_circuit():
     h, _ = rotating_field()
     with pytest.raises(IntegrationFailure, match="max_segments"):
-        synthesize_driven(h, (0, 2), max_segments=1)
+        synthesize_driven(h, (0, 2), max_segments=1, chart_radius=0.5)
     with pytest.raises(IntegrationFailure, match="max_rhs_evaluations"):
         synthesize_driven(h, (0, 2), max_rhs_evaluations=1)
 

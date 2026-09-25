@@ -1,4 +1,4 @@
-"""Experimental time-dependent synthesis in small Pauli Lie algebras.
+"""Numerical time-dependent synthesis in small Pauli Lie algebras.
 
 This implements numerical Wei–Norman coordinates, not a new decomposition theorem:
 Qvarfort & Pikovski, PRX Quantum 6, 010201 (2025). Unlike the static router, this
@@ -89,7 +89,8 @@ class DrivenResult:
     ``intervals`` records accepted chart intervals; later circuits are appended as
     left increments. Restarts can make circuit length grow with evolution time.
     ``rhs_evaluations`` includes rejected attempts. ``max_observed_condition`` is
-    sampled at ODE evaluations, not a rigorous bound over continuous time.
+    sampled at ODE evaluations and accepted mesh states, including rejected
+    attempts; it is not a rigorous bound over continuous time.
     """
 
     circuit: Circuit
@@ -162,7 +163,13 @@ def _adjoint_pairs(basis: Sequence[PauliString]) -> list[tuple[np.ndarray, ...]]
 
 
 def _coordinate_matrix(theta: np.ndarray, pairs: list) -> np.ndarray:
-    """Right-trivialized Jacobian for U = exp(-i theta_0 P_0) ... exp(-i theta_d P_d)."""
+    """Real Jacobian M for U = product_j exp(-i theta_j P_j), M theta_dot = h.
+
+    Column j expands prefix_j P_j prefix_j^dagger in the Hermitian Pauli
+    basis. Differentiating U and cancelling -i in U_dot = -i H U gives this
+    convention directly; M(0) = I. See docs/wei_norman_review.md for the
+    correspondence with the paper's differently normalized coefficients.
+    """
     prefix = np.eye(len(theta))
     matrix = np.empty_like(prefix)
     for column, (angle, (first, second, signs)) in enumerate(zip(theta, pairs)):
@@ -191,23 +198,29 @@ def synthesize_driven(
     rtol: float = 1e-9,
     atol: float = 1e-11,
     max_step: float = np.inf,
-    chart_radius: float = 0.5,
+    chart_radius: float | None = None,
     condition_limit: float = 100.0,
     max_segments: int = 1024,
     max_rhs_evaluations: int = 100_000,
 ) -> DrivenResult:
     """Integrate Wei–Norman angles and emit an ordinary Lizzy Pauli circuit.
 
-    This is an explicit experimental route, not automatic cost-based routing.
+    This is an explicit numerical route, not automatic cost-based routing.
     All declared controls generate the closure; no coefficients are sampled to
     decide structural eligibility. ``basis_order`` may permute the entire closure.
 
-    A trial interval is bisected when the sum of absolute noncentral chart angles exceeds
-    ``chart_radius`` or its Jacobian becomes ill-conditioned. Successful intervals
-    restart at zero coordinates, appending a new left increment. Limits bound
-    closure size, accepted segments, and total RHS calls; failures raise instead
-    of returning a partial circuit. The angle cap is a conservative heuristic,
-    not a proof that every point of the numerical path is well conditioned.
+    By default, try one compact product for the full interval. A trial interval
+    is bisected when sampled coordinates/Jacobians become nonfinite or the
+    Jacobian exceeds ``condition_limit``. Accepted increments are appended in
+    application order; restarts can still increase circuit length. Set
+    ``chart_radius=0.5`` to retain the earlier conservative L1 noncentral-angle
+    cap (smaller positive radii are also supported). ``None`` removes only that
+    radius cap, not the condition/work guards.
+
+    Conditioning is checked at RHS evaluations and accepted ODE mesh states.
+    These samples can miss intervening singularities: this is not a certified
+    atlas or a globally valid fixed-product parameterization. Closure, segment,
+    and global RHS limits are enforced; failure returns no partial circuit.
 
     ``rtol``/``atol`` are local coordinate tolerances, NOT a bound on final operator
     error. Set ``max_step`` to resolve the fastest control timescale; an adaptive
@@ -223,11 +236,11 @@ def synthesize_driven(
     start, end = map(float, span)
     if not np.isfinite(end - start):
         raise ValueError("time_span duration must be finite")
-    for value, name in ((rtol, "rtol"), (atol, "atol"), (chart_radius, "chart_radius")):
+    for value, name in ((rtol, "rtol"), (atol, "atol")):
         if not np.isfinite(value) or value <= 0:
             raise ValueError(f"{name} must be finite and positive")
-    if chart_radius > 0.5:
-        raise ValueError("chart_radius must be at most 0.5 for this prototype")
+    if chart_radius is not None and (not np.isfinite(chart_radius) or not 0 < chart_radius <= 0.5):
+        raise ValueError("chart_radius must be None or finite in (0, 0.5]")
     if not np.isfinite(condition_limit) or condition_limit <= 1:
         raise ValueError("condition_limit must be finite and greater than one")
     if np.isnan(max_step) or max_step <= 0:
@@ -248,28 +261,38 @@ def synthesize_driven(
 
     def check_chart(theta):
         nonlocal peak_condition
+        if not np.all(np.isfinite(theta)):
+            raise _ChartLimit("nonfinite coordinates")
         # Central generators (including identity) never change the Jacobian.
-        if not np.all(np.isfinite(theta)) or np.sum(np.abs(theta[noncentral])) > chart_radius:
-            raise _ChartLimit
+        if chart_radius is not None and np.sum(np.abs(theta[noncentral])) > chart_radius:
+            raise _ChartLimit("chart_radius exceeded")
         matrix = _coordinate_matrix(theta, pairs)
-        condition = float(np.linalg.cond(matrix))
-        peak_condition = max(peak_condition, condition)
+        if not np.all(np.isfinite(matrix)):
+            raise _ChartLimit("nonfinite coordinate Jacobian")
+        try:
+            condition = float(np.linalg.cond(matrix))
+        except np.linalg.LinAlgError as exc:
+            raise _ChartLimit("condition estimation failed") from exc
+        peak_condition = max(peak_condition, condition) if np.isfinite(condition) else np.inf
         if not np.isfinite(condition) or condition > condition_limit:
-            raise _ChartLimit
+            raise _ChartLimit("condition_limit exceeded")
         return matrix
 
     def rhs(time, theta):
         nonlocal evaluations
-        evaluations += 1
-        if evaluations > max_rhs_evaluations:
+        if evaluations >= max_rhs_evaluations:
             raise IntegrationFailure("max_rhs_evaluations exhausted")
+        evaluations += 1
         coefficients = np.zeros(len(basis))
         coefficients[positions] = hamiltonian.at(time)
         matrix = check_chart(theta)
         try:
-            return np.linalg.solve(matrix, coefficients)
+            derivative = np.linalg.solve(matrix, coefficients)
         except np.linalg.LinAlgError as exc:
-            raise _ChartLimit from exc
+            raise _ChartLimit("coordinate solve failed") from exc
+        if not np.all(np.isfinite(derivative)):
+            raise _ChartLimit("nonfinite coordinate derivative")
+        return derivative
 
     circuit, intervals = Circuit(), []
     current, target = start, end
@@ -282,13 +305,18 @@ def synthesize_driven(
                                  method="DOP853", rtol=rtol, atol=atol, max_step=max_step)
             if not solution.success:
                 raise IntegrationFailure(solution.message)
+            # Accepted mesh states need not coincide with checked RHS stages.
+            for mesh_angles in solution.y.T:
+                check_chart(mesh_angles)
             angles = solution.y[:, -1]
             check_chart(angles)
-        except _ChartLimit:
+        except _ChartLimit as exc:
             rejected += 1
             midpoint = current + (target - current) / 2
             if midpoint == current or midpoint == target:
-                raise IntegrationFailure("chart interval cannot be resolved at this time scale")
+                raise IntegrationFailure(
+                    f"chart interval cannot be resolved at this time scale: {exc}"
+                ) from exc
             target = midpoint
             continue
         # Circuit application order is opposite to the displayed WN product.

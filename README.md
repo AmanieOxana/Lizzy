@@ -152,6 +152,9 @@ that wins on gate count can still miss the budget it was sized for.
 Hamiltonians into concrete `H/S/Sdg/CX/Rz` gates, with global phase retained and
 OpenQASM 3 export. This is a numerical implementation of an established method,
 not a newly discovered decomposition or a universally better synthesis route.
+The [paper review and implementation notes](docs/wei_norman_review.md) separate
+the published local-coordinate construction from Lizzy's numerical safeguards
+and the limits of the benchmark evidence.
 
 ```python
 import numpy as np
@@ -199,6 +202,11 @@ The end-to-end interface adds:
 - Per-component closure limits (`max_dimension=32`), a total closure limit
   (`max_total_dimension=1024`), and shared RHS/chart budgets across every component
   and pulse interval. All closures are checked before a driven callback is evaluated.
+- Compact, condition-limited charts by default (`chart_radius=None`): accumulated
+  angle magnitude alone no longer forces a restart. The sampled coordinate
+  Jacobian must still stay below `condition_limit`, and rejected intervals are
+  retried at shorter duration. Set `chart_radius=0.5` to reproduce the earlier
+  conservative angle-limited policy; this is an optional additional guard.
 - Explicit `breakpoints=[...]` for known pulse discontinuities, in integration
   order. Each pulse uses one-sided endpoint values. Callbacks must be deterministic
   and all potentially active controls must be declared. Smooth controls still need
@@ -241,16 +249,20 @@ The method is established [Wei–Norman/Lie-algebra decoupling](https://doi.org/
 not a new Lizzy decomposition theorem. The prototype supports real, smooth control
 callbacks at absolute time, forward/backward intervals, central identity phases,
 and explicit permutations of the full factor basis. It caps closure dimension
-(32 by default), bounds numerical work, and retries shorter intervals when chart
-angles or Jacobian conditioning become unsafe. Central generators do not require
-chart restarts. Failures raise instead of returning a partial circuit.
+(32 by default), bounds numerical work, and retries shorter intervals when sampled
+Jacobian conditioning becomes unsafe. The default `chart_radius=None` permits
+larger angles in a well-conditioned chart; an explicit radius in `(0, 0.5]` also
+limits their accumulated magnitude. Central generators do not require chart restarts.
+Failures raise instead of returning a partial circuit.
 
 This is numerical synthesis without a Trotter splitting, **not** certified exact
 synthesis: integration error remains, conditioning is sampled, and chart restarts
-can make depth grow with time. Supply every potentially active Pauli control even
-if initially zero; set `max_step` to resolve the fastest control timescale and split
-discontinuous pulses into separate calls. The full closure may still be exponential,
-so no generic molecular-chemistry advantage is implied.
+can make depth grow with time. A condition-limited chart is still a local coordinate
+description, not a global nonsingular parametrization or a guarantee of one factor
+per basis element for every evolution. Supply every potentially active Pauli
+control even if initially zero; set `max_step` to resolve the fastest control
+timescale and split discontinuous pulses into separate calls. The full closure may
+still be exponential, so no generic molecular-chemistry advantage is implied.
 
 Symdyn already derives Wei–Norman equations **and numerically integrates them**
 through `scipy_solve` ([source](https://gitlab.com/VolodyaCO/dynamics-of-sun-systems/-/blob/main/src/symdyn/algebra.py)). Its
@@ -315,14 +327,20 @@ small-instance checks are empirical, not certified error bounds or a routing pol
 |---|---:|---:|---:|---:|---:|
 | Rotating spin | 3 | 0 | 0 | 0 | 0 |
 | Encoded spin (`XXX`, `XXY`, `IIZ`) | 3 | 4 | 4 | 4 | 4 |
-| Driven three-qubit TFIM | 15 | 256 | 512 | 1,024 | 4,100 |
+| Driven three-qubit TFIM | 15 | 32 | 512 | 1,024 | 4,100 |
 
-These columns count actual emitted CX gates. Earlier TFIM values of 160/320/640
-were analytical pair-block estimates, not gates emitted by this portfolio; the
-benchmark now keeps those estimates only in the separate `logical_CX` column.
+These columns count actual emitted CX gates with compact, condition-limited
+Wei–Norman charts. The earlier 256-CX Wei–Norman result used the conservative
+`chart_radius=0.5` policy and eight charts; it was an actual gate count, not an
+estimate. Separately, historical TFIM values of 160/320/640 were analytical
+pair-block estimates, not gates emitted by this portfolio; analytical estimates
+remain only in the separate `logical_CX` column.
 
 The product-formula search first passes at 1,024 steps in each case. Magnus4/Fer4
-use 32 steps on the spins and 16 on TFIM; Wei–Norman uses eight charts on TFIM.
+use 32 steps on the spins and 16 on TFIM; compact Wei–Norman uses one chart in
+each of these three cases, with 15 rotations on TFIM. This is the same
+Wei–Norman construction with fewer unnecessary radius-triggered restarts,
+not a new decomposition or a guarantee that every case fits in one chart.
 Expansion plans are screened against dense references on a power-of-two grid
 before compilation; the final compiled/emitted circuit must independently pass.
 This is a small-instance oracle benchmark, not deployable accuracy-based routing
@@ -347,6 +365,11 @@ settings, error measurements and timings. A complete
 eight unsupported static-exact cases, and one explicit Wei–Norman closure cap.
 The comparison includes Wei–Norman,
 midpoint-S2, and the existing static exact route wherever supported.
+Here `static-exact` means the orthogonal/summand decomposition, not the full default
+Lizzy portfolio: pair kernels, hybrid routes, alternative product formulas, and
+optional SDK emission are not compared. An unsupported exact embedding therefore
+does not mean that every existing Lizzy route is unavailable, and a win over
+midpoint-S2 is not by itself a win over the current static router.
 
 All methods share a fixed **concrete native ladder/shared-frame portfolio**.
 Counts below are actual CX gates in the emitted artifacts, not block-aware
@@ -355,10 +378,14 @@ logical estimates. Default measured threshold: `1e-6`.
 | Case | Wei–Norman CX | Midpoint-S2 CX | Static exact CX |
 |---|---:|---:|---:|
 | Short TFIM3, `t=0.003` | 32 | **8** | 28 |
-| Static TFIM3, `t=1` | 256 | 2,052 | **28** |
-| Long TFIM3, `t=5` | 1,024 | 16,388 | **28** |
-| Driven TFIM3 | **256** | 4,100 | unsupported |
+| Static TFIM3, `t=1` | 32 | 2,052 | **28** |
+| Long TFIM3, `t=5` | 32 | 16,388 | **28** |
+| Driven TFIM3 | **32** | 4,100 | unsupported |
 | Driven encoded spin | 4 | 4 | unsupported |
+
+The old radius-limited policy emitted 256 and 1,024 CX on static and long TFIM,
+respectively. Compact charts remove that overhead on these instances; the
+existing static exact route still wins on CX.
 
 The static exact solver returns the spin-cover representative up to global phase;
 PASS for that route uses the reported trace-phase-aligned operator norm. The
@@ -367,10 +394,11 @@ Wei–Norman must additionally pass the **strict**, phase-preserving norm. Emitt
 and logical circuits must agree in strict norm for every route. None of these
 empirical checks is a certified global error bound.
 
-Other qualifications matter: the encoded-spin CX tie hides 55 versus 10,257 total
-native gates; the full `su(8)` case exceeds the default Wei–Norman dimension cap
+Other qualifications matter: the encoded-spin CX tie hides 19 versus 10,257 total
+native gates in this emitter, before any additional single-qubit sequence
+compression; the full `su(8)` case exceeds the default Wei–Norman dimension cap
 while the product formula succeeds. The cap is configurable: running that case
-with `--max-dimension 64` succeeds at dimension 63 with 324 Wei–Norman CX versus
+with `--max-dimension 64` succeeds at dimension 63 with 162 Wei–Norman CX versus
 512 product-formula CX, at higher classical compilation cost. Known unsupported exact embeddings are
 reported with reasons, not omitted or counted as wins. `CAP`, `UNSUPPORTED`,
 integration failures and exhausted step searches remain visible in the output.

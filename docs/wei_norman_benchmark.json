@@ -1,13 +1,15 @@
 {
   "error_threshold": 0.000001,
   "configuration": {
-    "suite_version": 1,
+    "suite_version": 2,
     "seed": 20260921,
     "max_dimension": 32,
     "max_steps": 4096,
     "wn_rtol": 1e-10,
     "wn_atol": 1e-12,
     "wn_max_step": 0.025,
+    "wn_chart_radius": null,
+    "wn_chart_policy": "condition-only restarts",
     "max_rhs_evaluations": 100000,
     "emission_portfolio": [
       "native-ladder",
@@ -333,9 +335,9 @@
       "backend": "native-ladder",
       "op_error": 1.6504651808933464e-16,
       "strict_error": 2.220446049250313e-16,
-      "compile_seconds": 0.0005365420074667782,
+      "compile_seconds": 0.000582792010391131,
       "search_seconds": 0,
-      "verification_seconds": 0.00023895800404716283,
+      "verification_seconds": 0.0002615420089568943,
       "detail": ""
     },
     {
@@ -353,9 +355,9 @@
       "backend": "native-ladder",
       "op_error": 1.6504651808933464e-16,
       "strict_error": 2.220446049250313e-16,
-      "compile_seconds": 0.0003055419947486371,
-      "search_seconds": 0.00008629100921098143,
-      "verification_seconds": 0.00021212600404396653,
+      "compile_seconds": 0.00047204099246300757,
+      "search_seconds": 0.00009612500434741378,
+      "verification_seconds": 0.0003024590259883553,
       "detail": ""
     },
     {
@@ -373,9 +375,9 @@
       "backend": "native-ladder",
       "op_error": 1.5700924586837752e-16,
       "strict_error": 1.7772239894833365e-16,
-      "compile_seconds": 0.0016979990032268688,
+      "compile_seconds": 0.0018432920041959733,
       "search_seconds": 0,
-      "verification_seconds": 0.00016237499949056655,
+      "verification_seconds": 0.0001695409882813692,
       "detail": ""
     },
     {
@@ -397,9 +399,9 @@
       "backend": "native-ladder",
       "op_error": 2.7755575615628914e-16,
       "strict_error": 3.1401849173675503e-16,
-      "compile_seconds": 0.043402165989391506,
+      "compile_seconds": 0.0478134170116391,
       "search_seconds": 0,
-      "verification_seconds": 0.00025258399546146393,
+      "verification_seconds": 0.00021245901007205248,
       "detail": ""
     },
     {
@@ -417,9 +419,9 @@
       "backend": "native-ladder",
       "op_error": 2.7755575615628914e-16,
       "strict_error": 3.1401849173675503e-16,
-      "compile_seconds": 0.00035079100052826107,
-      "search_seconds": 0.00010158299119211733,
-      "verification_seconds": 0.00023995900119189173,
+      "compile_seconds": 0.0003296250069979578,
+      "search_seconds": 0.00008437500218860805,
+      "verification_seconds": 0.00024287498672492802,
       "detail": ""
     },
     {
@@ -437,7 +439,7 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.0000033329997677356005,
+      "compile_seconds": 0.0000017909915186464787,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "the existing exact route accepts static Hamiltonians only"
@@ -450,18 +452,18 @@
       "component_dimensions": [
         3
       ],
-      "charts": 4,
+      "charts": 1,
       "steps": null,
-      "rotations": 12,
+      "rotations": 3,
       "logical_cx_estimate": 0,
       "emitted_cx": 0,
-      "emitted_gates": 36,
+      "emitted_gates": 9,
       "backend": "native-ladder",
-      "op_error": 1.523845878456144e-15,
-      "strict_error": 1.5208363115568343e-15,
-      "compile_seconds": 0.07093654200434685,
+      "op_error": 6.752048217570264e-16,
+      "strict_error": 6.570331417668839e-16,
+      "compile_seconds": 0.02828320802655071,
       "search_seconds": 0,
-      "verification_seconds": 0.00039533300150651485,
+      "verification_seconds": 0.00015233398880809546,
       "detail": ""
     },
     {
@@ -479,9 +481,9 @@
       "backend": "native-ladder",
       "op_error": 8.944621510414244e-7,
       "strict_error": 8.944621510419869e-7,
-      "compile_seconds": 0.01676383300218731,
-      "search_seconds": 0.005994332997943275,
-      "verification_seconds": 0.01138695799454581,
+      "compile_seconds": 0.01763816800666973,
+      "search_seconds": 0.006007542018778622,
+      "verification_seconds": 0.01156791704124771,
       "detail": ""
     },
     {
@@ -499,9 +501,9 @@
       "backend": "native-frame",
       "op_error": 6.222289678212573e-16,
       "strict_error": 6.121992839132008e-16,
-      "compile_seconds": 0.0011222920002182946,
+      "compile_seconds": 0.0010809160012286156,
       "search_seconds": 0,
-      "verification_seconds": 0.00017312500858679414,
+      "verification_seconds": 0.00016362499445676804,
       "detail": ""
     },
     {
@@ -512,18 +514,18 @@
       "component_dimensions": [
         3
       ],
-      "charts": 4,
+      "charts": 1,
       "steps": null,
-      "rotations": 12,
-      "logical_cx_estimate": 32,
+      "rotations": 3,
+      "logical_cx_estimate": 8,
       "emitted_cx": 4,
-      "emitted_gates": 46,
+      "emitted_gates": 19,
       "backend": "native-frame",
-      "op_error": 2.6494488903983912e-15,
-      "strict_error": 2.6494488903983916e-15,
-      "compile_seconds": 0.06721041700802743,
+      "op_error": 1.6363195202624471e-15,
+      "strict_error": 1.6363195202624471e-15,
+      "compile_seconds": 0.029812083987053484,
       "search_seconds": 0,
-      "verification_seconds": 0.0010529999999562278,
+      "verification_seconds": 0.00041895901085808873,
       "detail": ""
     },
     {
@@ -541,9 +543,9 @@
       "backend": "native-frame",
       "op_error": 2.8291508241043235e-7,
       "strict_error": 2.829150831732136e-7,
-      "compile_seconds": 0.5415402499929769,
-      "search_seconds": 0.02037758300139103,
-      "verification_seconds": 0.11048791799112223,
+      "compile_seconds": 0.5238450829929207,
+      "search_seconds": 0.019473291002213955,
+      "verification_seconds": 0.11061050003627315,
       "detail": ""
     },
     {
@@ -561,7 +563,7 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.0005283749924274161,
+      "compile_seconds": 0.0005087919998914003,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "ValueError: The Pauli generators cannot all be embedded in the horizontal subspace of BDI(p, q) for any partition p + q = 3: the DLA's Pauli words admit no so(3) rotation-plane presentation with these generators horizontal. Supply a compatible generator set."
@@ -576,18 +578,18 @@
         3,
         3
       ],
-      "charts": 12,
+      "charts": 3,
       "steps": null,
-      "rotations": 36,
+      "rotations": 9,
       "logical_cx_estimate": 0,
       "emitted_cx": 0,
-      "emitted_gates": 108,
+      "emitted_gates": 27,
       "backend": "native-ladder",
-      "op_error": 5.258583596728029e-15,
-      "strict_error": 5.251000303462304e-15,
-      "compile_seconds": 0.2210399579926161,
+      "op_error": 1.6691923165525842e-15,
+      "strict_error": 1.6781035369533233e-15,
+      "compile_seconds": 0.0983622909989208,
       "search_seconds": 0,
-      "verification_seconds": 0.0022587079874938354,
+      "verification_seconds": 0.0013647500018123537,
       "detail": ""
     },
     {
@@ -605,9 +607,9 @@
       "backend": "native-ladder",
       "op_error": 5.460823749612603e-7,
       "strict_error": 5.460823751226233e-7,
-      "compile_seconds": 0.03244108300714288,
-      "search_seconds": 0.030082375000347383,
-      "verification_seconds": 0.13858050198177807,
+      "compile_seconds": 0.030999292008345947,
+      "search_seconds": 0.029962291999254376,
+      "verification_seconds": 0.13563099899329245,
       "detail": ""
     },
     {
@@ -625,9 +627,9 @@
       "backend": "native-ladder",
       "op_error": 2.025954076463816e-15,
       "strict_error": 2.044363999422533e-15,
-      "compile_seconds": 0.0013064170052530244,
+      "compile_seconds": 0.0013530410069506615,
       "search_seconds": 0,
-      "verification_seconds": 0.0008770419954089448,
+      "verification_seconds": 0.0008692920091561973,
       "detail": ""
     },
     {
@@ -638,18 +640,18 @@
       "component_dimensions": [
         3
       ],
-      "charts": 6,
+      "charts": 1,
       "steps": null,
-      "rotations": 18,
+      "rotations": 3,
       "logical_cx_estimate": 0,
       "emitted_cx": 0,
-      "emitted_gates": 54,
+      "emitted_gates": 9,
       "backend": "native-ladder",
-      "op_error": 2.9591995601620112e-15,
-      "strict_error": 2.966872736416684e-15,
-      "compile_seconds": 0.07724191699526273,
+      "op_error": 8.351404213606131e-16,
+      "strict_error": 8.330374778186578e-16,
+      "compile_seconds": 0.027252166997641325,
       "search_seconds": 0,
-      "verification_seconds": 0.0005049579922342673,
+      "verification_seconds": 0.00016166697605513036,
       "detail": ""
     },
     {
@@ -667,9 +669,9 @@
       "backend": "native-frame",
       "op_error": 3.8965769103063083e-7,
       "strict_error": 3.896576911641256e-7,
-      "compile_seconds": 0.344345333011006,
-      "search_seconds": 0.036811915997532196,
-      "verification_seconds": 0.09844870999222621,
+      "compile_seconds": 0.33770999900298193,
+      "search_seconds": 0.03630174999125302,
+      "verification_seconds": 0.09899262498947792,
       "detail": ""
     },
     {
@@ -687,7 +689,7 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.000002959000994451344,
+      "compile_seconds": 0.0000024999899324029684,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "the existing exact route accepts static Hamiltonians only"
@@ -700,18 +702,18 @@
       "component_dimensions": [
         3
       ],
-      "charts": 5,
+      "charts": 1,
       "steps": null,
-      "rotations": 15,
-      "logical_cx_estimate": 40,
+      "rotations": 3,
+      "logical_cx_estimate": 8,
       "emitted_cx": 4,
-      "emitted_gates": 55,
+      "emitted_gates": 19,
       "backend": "native-frame",
-      "op_error": 2.629967662280159e-15,
-      "strict_error": 2.629967662280159e-15,
-      "compile_seconds": 0.0698721660010051,
+      "op_error": 1.4384154266151024e-15,
+      "strict_error": 1.4217488917481876e-15,
+      "compile_seconds": 0.028351666987873614,
       "search_seconds": 0,
-      "verification_seconds": 0.0011132500076200813,
+      "verification_seconds": 0.00042929197661578655,
       "detail": ""
     },
     {
@@ -729,9 +731,9 @@
       "backend": "native-frame",
       "op_error": 3.896576901624509e-7,
       "strict_error": 3.8965769086072094e-7,
-      "compile_seconds": 0.9632126260112273,
-      "search_seconds": 0.039351667001028545,
-      "verification_seconds": 0.21776304101513233,
+      "compile_seconds": 0.9807666660053656,
+      "search_seconds": 0.03997787501430139,
+      "verification_seconds": 0.21830383298220113,
       "detail": ""
     },
     {
@@ -749,7 +751,7 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.0000023750035325065255,
+      "compile_seconds": 0.000002834014594554901,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "the existing exact route accepts static Hamiltonians only"
@@ -771,9 +773,9 @@
       "backend": "native-ladder",
       "op_error": 3.540350745057797e-15,
       "strict_error": 3.540350745057797e-15,
-      "compile_seconds": 0.005225499990046956,
+      "compile_seconds": 0.0059477089962456375,
       "search_seconds": 0,
-      "verification_seconds": 0.0017543330031912774,
+      "verification_seconds": 0.0017105000151786953,
       "detail": ""
     },
     {
@@ -791,9 +793,9 @@
       "backend": "native-ladder",
       "op_error": 6.528233811135634e-9,
       "strict_error": 6.528233811158094e-9,
-      "compile_seconds": 0.00017145799938589334,
-      "search_seconds": 0.0000990839907899499,
-      "verification_seconds": 0.00043945800280198455,
+      "compile_seconds": 0.0001605409779585898,
+      "search_seconds": 0.00010320899309590459,
+      "verification_seconds": 0.00043958399328403175,
       "detail": ""
     },
     {
@@ -811,9 +813,9 @@
       "backend": "native-ladder",
       "op_error": 3.911242390086837e-15,
       "strict_error": 1.9999999999999971,
-      "compile_seconds": 0.0013363750040298328,
+      "compile_seconds": 0.001204165950184688,
       "search_seconds": 0,
-      "verification_seconds": 0.0016945840034168214,
+      "verification_seconds": 0.0016496670141350478,
       "detail": ""
     },
     {
@@ -824,18 +826,18 @@
       "component_dimensions": [
         15
       ],
-      "charts": 8,
+      "charts": 1,
       "steps": null,
-      "rotations": 120,
-      "logical_cx_estimate": 160,
-      "emitted_cx": 256,
-      "emitted_gates": 872,
+      "rotations": 15,
+      "logical_cx_estimate": 20,
+      "emitted_cx": 32,
+      "emitted_gates": 109,
       "backend": "native-ladder",
-      "op_error": 2.7738467339744758e-14,
-      "strict_error": 2.7742406033965718e-14,
-      "compile_seconds": 0.21838170899718534,
+      "op_error": 1.2545821202294436e-14,
+      "strict_error": 1.2557253513129182e-14,
+      "compile_seconds": 0.064956375019392,
       "search_seconds": 0,
-      "verification_seconds": 0.01315466599771753,
+      "verification_seconds": 0.001731291995383799,
       "detail": ""
     },
     {
@@ -853,9 +855,9 @@
       "backend": "native-ladder",
       "op_error": 6.803356567041154e-7,
       "strict_error": 6.803356567146142e-7,
-      "compile_seconds": 0.028550416012876667,
-      "search_seconds": 0.025551915998221375,
-      "verification_seconds": 0.1315592910104897,
+      "compile_seconds": 0.028748958982760087,
+      "search_seconds": 0.02694929199060425,
+      "verification_seconds": 0.1351613329607062,
       "detail": ""
     },
     {
@@ -873,9 +875,9 @@
       "backend": "native-ladder",
       "op_error": 4.335324727067362e-15,
       "strict_error": 1.9999999999999971,
-      "compile_seconds": 0.0005872080073459074,
+      "compile_seconds": 0.000584207009524107,
       "search_seconds": 0,
-      "verification_seconds": 0.001635666994843632,
+      "verification_seconds": 0.0016537500196136534,
       "detail": ""
     },
     {
@@ -886,18 +888,18 @@
       "component_dimensions": [
         15
       ],
-      "charts": 32,
+      "charts": 1,
       "steps": null,
-      "rotations": 480,
-      "logical_cx_estimate": 640,
-      "emitted_cx": 1024,
-      "emitted_gates": 3488,
+      "rotations": 15,
+      "logical_cx_estimate": 20,
+      "emitted_cx": 32,
+      "emitted_gates": 109,
       "backend": "native-ladder",
-      "op_error": 1.1540878114442303e-13,
-      "strict_error": 1.1540526462464387e-13,
-      "compile_seconds": 0.9010536659916397,
+      "op_error": 5.695610499001227e-13,
+      "strict_error": 5.695674280030402e-13,
+      "compile_seconds": 0.2940597079868894,
       "search_seconds": 0,
-      "verification_seconds": 0.0499252090085065,
+      "verification_seconds": 0.0017079160024877638,
       "detail": ""
     },
     {
@@ -915,9 +917,9 @@
       "backend": "native-ladder",
       "op_error": 6.254675279053928e-7,
       "strict_error": 6.254675279851987e-7,
-      "compile_seconds": 0.22712816701096017,
-      "search_seconds": 0.2539636660076212,
-      "verification_seconds": 1.024632039028802,
+      "compile_seconds": 0.22323899998445995,
+      "search_seconds": 0.25592266701278277,
+      "verification_seconds": 1.0430882930231746,
       "detail": ""
     },
     {
@@ -935,9 +937,9 @@
       "backend": "native-ladder",
       "op_error": 5.57310304826697e-15,
       "strict_error": 1.9999999999999967,
-      "compile_seconds": 0.000642249986412935,
+      "compile_seconds": 0.0006568339886143804,
       "search_seconds": 0,
-      "verification_seconds": 0.001773541996954009,
+      "verification_seconds": 0.0016324580064974725,
       "detail": ""
     },
     {
@@ -948,18 +950,18 @@
       "component_dimensions": [
         15
       ],
-      "charts": 8,
+      "charts": 1,
       "steps": null,
-      "rotations": 120,
-      "logical_cx_estimate": 160,
-      "emitted_cx": 256,
-      "emitted_gates": 872,
+      "rotations": 15,
+      "logical_cx_estimate": 20,
+      "emitted_cx": 32,
+      "emitted_gates": 109,
       "backend": "native-ladder",
-      "op_error": 2.874973766862142e-14,
-      "strict_error": 2.8746451309303645e-14,
-      "compile_seconds": 0.22490041601122357,
+      "op_error": 9.299535158818933e-13,
+      "strict_error": 9.299626792494943e-13,
+      "compile_seconds": 0.07721391602535732,
       "search_seconds": 0,
-      "verification_seconds": 0.012851000006776303,
+      "verification_seconds": 0.001767124980688095,
       "detail": ""
     },
     {
@@ -977,9 +979,9 @@
       "backend": "native-ladder",
       "op_error": 3.3567768917097543e-7,
       "strict_error": 3.356776895465972e-7,
-      "compile_seconds": 0.056421123998006806,
-      "search_seconds": 0.05132179200882092,
-      "verification_seconds": 0.2574787519988604,
+      "compile_seconds": 0.05687516598845832,
+      "search_seconds": 0.05190366701572202,
+      "verification_seconds": 0.2608462070347741,
       "detail": ""
     },
     {
@@ -997,7 +999,7 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.0000021669984562322497,
+      "compile_seconds": 0.000003082997864112258,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "the existing exact route accepts static Hamiltonians only"
@@ -1010,18 +1012,18 @@
       "component_dimensions": [
         15
       ],
-      "charts": 4,
+      "charts": 1,
       "steps": null,
-      "rotations": 60,
+      "rotations": 15,
       "logical_cx_estimate": 3,
-      "emitted_cx": 72,
-      "emitted_gates": 324,
+      "emitted_cx": 18,
+      "emitted_gates": 81,
       "backend": "native-ladder",
-      "op_error": 1.2217888476617941e-14,
-      "strict_error": 1.2219850177320316e-14,
-      "compile_seconds": 0.13537737498700153,
+      "op_error": 3.152901536546713e-15,
+      "strict_error": 3.1597090866121907e-15,
+      "compile_seconds": 0.0526014170027338,
       "search_seconds": 0,
-      "verification_seconds": 0.00416029199550394,
+      "verification_seconds": 0.0010823750053532422,
       "detail": ""
     },
     {
@@ -1039,9 +1041,9 @@
       "backend": "native-ladder",
       "op_error": 3.3585750442963845e-7,
       "strict_error": 3.3585750515101014e-7,
-      "compile_seconds": 0.14543974999105558,
-      "search_seconds": 0.051319707999937236,
-      "verification_seconds": 0.4636322509904858,
+      "compile_seconds": 0.14343399996869266,
+      "search_seconds": 0.05029820802155882,
+      "verification_seconds": 0.45416571001987904,
       "detail": ""
     },
     {
@@ -1059,7 +1061,7 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.0014153749943943694,
+      "compile_seconds": 0.001434416975826025,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "ValueError: The Pauli generators cannot all be embedded in the horizontal subspace of BDI(p, q) for any partition p + q = 6: the DLA's Pauli words admit no so(6) rotation-plane presentation with these generators horizontal. Supply a compatible generator set."
@@ -1072,18 +1074,18 @@
       "component_dimensions": [
         15
       ],
-      "charts": 4,
+      "charts": 1,
       "steps": null,
-      "rotations": 60,
+      "rotations": 15,
       "logical_cx_estimate": 3,
-      "emitted_cx": 72,
-      "emitted_gates": 324,
+      "emitted_cx": 18,
+      "emitted_gates": 81,
       "backend": "native-ladder",
-      "op_error": 1.2054424028986812e-14,
-      "strict_error": 1.2044531723374622e-14,
-      "compile_seconds": 0.13810812501469627,
+      "op_error": 3.990527418229058e-15,
+      "strict_error": 3.99123214046893e-15,
+      "compile_seconds": 0.05482316596317105,
       "search_seconds": 0,
-      "verification_seconds": 0.0035802500060526654,
+      "verification_seconds": 0.0011552500072866678,
       "detail": ""
     },
     {
@@ -1101,9 +1103,9 @@
       "backend": "native-ladder",
       "op_error": 9.546447444650431e-7,
       "strict_error": 9.546447445290551e-7,
-      "compile_seconds": 0.013602292994619347,
-      "search_seconds": 0.013005791988689452,
-      "verification_seconds": 0.040586791961686686,
+      "compile_seconds": 0.013145916978828609,
+      "search_seconds": 0.012853584019467235,
+      "verification_seconds": 0.04055979201802984,
       "detail": ""
     },
     {
@@ -1121,7 +1123,7 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.0000024579931050539017,
+      "compile_seconds": 0.0000027500209398567677,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "the existing exact route accepts static Hamiltonians only"
@@ -1141,7 +1143,7 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.00011695799184963107,
+      "compile_seconds": 0.00012912499369122088,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "Pauli closure exceeds max_dimension=32"
@@ -1161,9 +1163,9 @@
       "backend": "native-ladder",
       "op_error": 4.300186657044423e-7,
       "strict_error": 4.300186654256698e-7,
-      "compile_seconds": 0.011108959006378427,
-      "search_seconds": 0.010193124995566905,
-      "verification_seconds": 0.04303337597229984,
+      "compile_seconds": 0.010341417975723743,
+      "search_seconds": 0.010028332995716482,
+      "verification_seconds": 0.04320120805641636,
       "detail": ""
     },
     {
@@ -1181,11 +1183,11 @@
       "backend": null,
       "op_error": null,
       "strict_error": null,
-      "compile_seconds": 0.0003198750055162236,
+      "compile_seconds": 0.00036091700894758105,
       "search_seconds": 0,
       "verification_seconds": 0,
       "detail": "outside the existing orthogonal/summand exact route"
     }
   ],
-  "recorded_date": "2026-09-21"
+  "recorded_date": "2026-09-25"
 }

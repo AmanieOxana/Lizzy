@@ -300,9 +300,10 @@ def main(argv=None):
         parser.error(str(exc))
     if args.json:
         print(json.dumps({"error_threshold": args.error,
-            "configuration": {"suite_version": 1, "seed": 20260921,
+            "configuration": {"suite_version": 2, "seed": 20260921,
                 "max_dimension": args.max_dimension, "max_steps": args.max_steps,
                 "wn_rtol": 1e-10, "wn_atol": 1e-12, "wn_max_step": 0.025,
+                "wn_chart_radius": None, "wn_chart_policy": "condition-only restarts",
                 "max_rhs_evaluations": 100_000,
                 "emission_portfolio": ["native-ladder", "eligible native-frame"],
                 "accuracy_policy": "trace-phase-aligned norm; WN also strict norm",
