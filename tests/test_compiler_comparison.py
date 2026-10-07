@@ -5,8 +5,8 @@ import pytest
 
 from experiments import compiler_comparison as benchmark
 from experiments._compiler_adapters import CompilerCandidate
-from lizzy.clifford_t import CliffordTCircuit, CliffordTGate
-from lizzy.native import NativeCircuit, NativeGate
+from lizzy.emission.clifford_t import CliffordTCircuit, CliffordTGate
+from lizzy.emission.native import NativeCircuit, NativeGate
 
 
 def test_common_phase_contract_half_budget_and_both_accuracy_checks(monkeypatch):

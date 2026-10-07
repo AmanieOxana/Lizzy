@@ -4,13 +4,13 @@ import numpy as np
 import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
-from lizzy.classify import summands
+from lizzy.algebra.classify import summands
+from lizzy.algebra.symmetry import commuting_clusters, pair_clusters
 from lizzy.dense import (
     circuit_matrix,
     evolution,
     infidelity,
 )
-from lizzy.exact import decompose, free_part, is_decomposable
 from lizzy.hamiltonian import (
     Circuit,
     anticommutation_matrix,
@@ -19,13 +19,13 @@ from lizzy.hamiltonian import (
     rotation_cost,
     terms_of,
 )
-from lizzy.symmetry import commuting_clusters, pair_clusters
-from lizzy.synthesize import synthesize
-from lizzy.trotter import (
+from lizzy.synthesis.exact import decompose, free_part, is_decomposable
+from lizzy.synthesis.trotter import (
     cluster_formula,
     product_formula_cost,
     steps_for_clusters,
 )
+from lizzy.synthesize import synthesize
 
 
 def test_the_degenerate_hybrid_is_not_a_candidate() -> None:
@@ -47,7 +47,7 @@ def test_hybrid_mechanism_meets_the_budget() -> None:
     is cheaper and the router rightly prefers it, but the hybrid stays reachable
     for inputs the pair clustering declines, so its budget claim keeps its test.
     """
-    from lizzy._routing import _hybrid_plan
+    from lizzy.synthesis._routing import _hybrid_plan
 
     n = 4
     h = model("heisenberg", n, seed=1)
@@ -61,7 +61,7 @@ def test_hybrid_mechanism_meets_the_budget() -> None:
 def test_hybrid_free_network_appears_once_per_step() -> None:
     """The free summand sits last in the symmetric step, so its two halves merge:
     one network per step, not two."""
-    from lizzy._routing import _hybrid_plan
+    from lizzy.synthesis._routing import _hybrid_plan
 
     h = model("heisenberg", 4, seed=1)
     free, rest = free_part(h)

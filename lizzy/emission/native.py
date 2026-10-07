@@ -21,7 +21,7 @@ from operator import index as integer_index
 
 import numpy as np
 
-from lizzy import gf2
+from lizzy.algebra import gf2
 from lizzy.hamiltonian import Circuit, symplectic_vectors
 
 _ARITY = {"h": 1, "s": 1, "sdg": 1, "cx": 2, "rz": 1}
@@ -156,7 +156,7 @@ class NativeCircuit:
         return sum(gate.kind == "cx" for gate in self.gates)
 
     def n_2qb_gates(self) -> int:
-        """Backend-neutral count hook used by :class:`lizzy.emit.EmissionQuote`."""
+        """Backend-neutral count hook used by :class:`lizzy.emission.emit.EmissionQuote`."""
         return self.two_qubit_gates
 
     def get_unitary(self) -> np.ndarray:

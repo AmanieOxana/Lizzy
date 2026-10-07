@@ -8,9 +8,9 @@ import pytest
 from scipy.integrate import solve_ivp
 from scipy.linalg import expm
 
-from lizzy import driven
 from lizzy.dense import circuit_matrix, pauli_matrix
-from lizzy.driven import (
+from lizzy.synthesis import driven
+from lizzy.synthesis.driven import (
     AlgebraTooLarge,
     DrivenHamiltonian,
     IntegrationFailure,

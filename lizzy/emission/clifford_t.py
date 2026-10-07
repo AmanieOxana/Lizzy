@@ -10,14 +10,14 @@ from operator import index as integer_index
 
 import numpy as np
 
-from lizzy.hamiltonian import Circuit
-from lizzy.native import (
+from lizzy.emission.native import (
     NativeCircuit,
     NativeGate,
     _qasm3,
     ladder_circuit,
     native_frame_candidates,
 )
+from lizzy.hamiltonian import Circuit
 
 _FRAME_MAX_WIDTH = 8
 _FRAME_MAX_ROTATIONS = 256

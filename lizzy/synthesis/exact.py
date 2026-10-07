@@ -28,8 +28,8 @@ from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 from scipy.linalg import expm
 
-from lizzy._orthogonal_mapping import map_orthogonal
-from lizzy.classify import classify, is_fast_forwardable, summands
+from lizzy.algebra._orthogonal_mapping import map_orthogonal
+from lizzy.algebra.classify import classify, is_fast_forwardable, summands
 from lizzy.hamiltonian import (
     Circuit,
     anticommutation_matrix,
@@ -362,7 +362,7 @@ def _optimize_bdi_wing(
     k: np.ndarray, central: np.ndarray, generator: np.ndarray, p: int,
     planes: dict, baseline: tuple[tuple[str, float], ...], rotation_error: float,
 ) -> tuple[tuple[tuple[str, float], ...], BDIOptimization]:
-    from lizzy.clifford_t import estimate_rotation_t_count
+    from lizzy.emission.clifford_t import estimate_rotation_t_count
 
     def score(wing):
         costs = [estimate_rotation_t_count(angle, rotation_error) for _, angle in wing]

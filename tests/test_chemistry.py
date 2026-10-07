@@ -2,8 +2,9 @@ import numpy as np
 import pytest
 from scipy.linalg import expm
 
-from lizzy._chemistry_extensions import prune_double_factorization
-from lizzy.chemistry import (
+from lizzy.dense import hamiltonian_matrix, infidelity
+from lizzy.fermions._chemistry_extensions import prune_double_factorization
+from lizzy.fermions.chemistry import (
     MolecularHamiltonian,
     factorize_molecular_ffsim,
     fermion_operator,
@@ -16,7 +17,6 @@ from lizzy.chemistry import (
     to_pauli,
     to_pauli_openfermion,
 )
-from lizzy.dense import hamiltonian_matrix, infidelity
 from lizzy.hamiltonian import terms_of
 
 

@@ -94,7 +94,7 @@ def test_sphinx_builds_math_and_public_api_without_warnings(tmp_path):
     methods = (tmp_path / "html" / "methods.html").read_text()
     assert 'class="math notranslate' in methods
     assert 'id="lizzy.synthesize.Compiler"' in methods
-    assert 'id="lizzy.driven.WeiNormanBasis"' in methods
+    assert 'id="lizzy.synthesis.driven.WeiNormanBasis"' in methods
     for name in ("compiler_comparison_results.json", "compiler_comparison_protocol.md",
                  "bdi_paper_results.json"):
         downloads = list((tmp_path / "html" / "_downloads").rglob(name))

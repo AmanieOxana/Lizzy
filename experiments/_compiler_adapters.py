@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from lizzy.native import NativeCircuit, NativeGate
+from lizzy.emission.native import NativeCircuit, NativeGate
 
 if TYPE_CHECKING:
-    from lizzy.clifford_t import CliffordTCircuit
+    from lizzy.emission.clifford_t import CliffordTCircuit
 
 
 @dataclass(frozen=True)

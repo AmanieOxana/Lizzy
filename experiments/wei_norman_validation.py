@@ -14,9 +14,13 @@ import numpy as np
 from scipy.linalg import expm
 
 from lizzy.dense import circuit_matrix, pauli_matrix
-from lizzy.driven import AlgebraTooLarge, DrivenHamiltonian, IntegrationFailure
 from lizzy.hamiltonian import hamiltonian
-from lizzy.wei_norman import synthesize_wei_norman
+from lizzy.synthesis.driven import (
+    AlgebraTooLarge,
+    DrivenHamiltonian,
+    IntegrationFailure,
+)
+from lizzy.synthesis.wei_norman import synthesize_wei_norman
 
 from ._validation import (
     BenchmarkCase,

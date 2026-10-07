@@ -24,7 +24,7 @@ The CX router compares exact, hybrid and formula candidates per commuting
 component, then quotes the full sequence. Explicit BDI keeps its algorithm;
 hybrid kernels use Givens. Fixed `steps`, nonunit `calibration` and opt-in qDRIFT
 do not certify formula error. Bounded cost shortlisting sets `routing_estimated`,
-not an error bound. `Compiler` holds reusable settings; `_routing.py` selects
+not an error bound. `Compiler` holds reusable settings; `synthesis/_routing.py` selects
 candidates without benchmark oracles.
 
 T mode compares complete BDI-reference, legal-nullspace BDI, Givens and eligible
@@ -45,8 +45,8 @@ metadata for uncontrolled circuits, but needs implementation in controlled evolu
 
 Wierichs et al., [Recursive Cartan decompositions for unitary synthesis](https://arxiv.org/html/2503.19014v2),
 Sections VI.1/VI.2 and Appendices F.4–F.6, provide the general endpoint and reusable
-horizontal constructions. `exact.py` derives signed $\mathfrak{so}(m)$ mappings
-from generators, not named-model templates. `_orthogonal_mapping.py` supplies a
+horizontal constructions. `synthesis/exact.py` derives signed $\mathfrak{so}(m)$ mappings
+from generators, not named-model templates. `algebra/_orthogonal_mapping.py` supplies a
 bounded general embedding when horizontality fails; upstream verifies the Lie
 map. This supports mapped orthogonal components, not all Hamiltonians/Cartan types.
 BDI keeps its own partition/order; Givens separately uses cheap-adjacent ordering.
@@ -120,7 +120,7 @@ V_{j-1}P_jV_{j-1}^{\dagger}=\sum_kM_{kj}P_k,\qquad
 \dot U U^{-1}=-i\sum_{kj}\dot\theta_jM_{kj}P_k,\qquad M\dot\theta=h.
 $$
 
-`driven.py` constructs the closure and solves `M @ theta_dot = coefficients`,
+`synthesis/driven.py` constructs the closure and solves `M @ theta_dot = coefficients`,
 with $M(0)=I$ and no extra i. For $PQ=isR$, $s\in\{-1,1\}$,
 
 $$
@@ -165,7 +165,7 @@ is false; static auto never silently chooses Wei–Norman.
 
 ## Fermionic inputs and expansions
 
-`gaussian.py` uses OpenFermion [quadratic diagonalization/Bogoliubov circuits](https://quantumai.google/reference/python/openfermion/circuits/bogoliubov_transform)
+`fermions/gaussian.py` uses OpenFermion [quadratic diagonalization/Bogoliubov circuits](https://quantumai.google/reference/python/openfermion/circuits/bogoliubov_transform)
 with `initial_state=None`: full basis wings, mode phases and scalar phase, not
 state preparation. Complex hopping/pairing and direct `from_quadratic` input are
 supported without dense $2^n$ synthesis. Recognition uses the supplied JW order;
@@ -185,7 +185,7 @@ reordering changes the approximant; fewer CX need not mean equal-accuracy saving
 `accuracy_certified` is false. The completed selector study had common coverage
 only 2/8 and post-hoc headroom 2.33%; no chemistry advantage or selector was found.
 
-`expansions.py` implements published fourth-order
+`synthesis/expansions.py` implements published fourth-order
 [Magnus/Fer schemes](https://personales.upv.es/serblaza/2011EncyclopediaFerMagnus.pdf)
 in coefficient space. Each step's one/two Pauli-sum exponentials still need
 synthesis: commuting factors directly, others through Wei–Norman. Truncation
@@ -198,10 +198,10 @@ Split discontinuous pulses. These are opt-in, not new decomposition theorems.
 .. autoclass:: lizzy.synthesize.Compiler
    :members: compile
 
-.. autoclass:: lizzy.driven.WeiNormanBasis
+.. autoclass:: lizzy.synthesis.driven.WeiNormanBasis
    :members: jacobian
 
-.. autofunction:: lizzy.wei_norman.synthesize_wei_norman
+.. autofunction:: lizzy.synthesis.wei_norman.synthesize_wei_norman
 ```
 
 Tests should protect independent mathematical invariants, public contracts and

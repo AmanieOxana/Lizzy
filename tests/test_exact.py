@@ -12,10 +12,10 @@ import numpy as np
 import pytest
 from scipy.linalg import expm
 
-from lizzy import exact
 from lizzy.dense import circuit_matrix, evolution
-from lizzy.emit import EmissionQuote
+from lizzy.emission.emit import EmissionQuote
 from lizzy.hamiltonian import hamiltonian, model, terms_of
+from lizzy.synthesis import exact
 from lizzy.synthesize import synthesize
 
 synthesis = importlib.import_module("lizzy.synthesize")

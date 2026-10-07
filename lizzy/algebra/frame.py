@@ -27,7 +27,7 @@
 import numpy as np
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy.gf2 import gram, inverse, rank, solve
+from lizzy.algebra.gf2 import gram, inverse, rank, solve
 from lizzy.hamiltonian import symplectic_vectors, terms_of
 
 

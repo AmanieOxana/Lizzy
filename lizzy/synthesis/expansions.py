@@ -16,14 +16,18 @@ from itertools import pairwise
 import numpy as np
 from paulie.common.pauli_string_factory import get_pauli_string
 
-from lizzy._numerical import _positive_integer, _time_span, _validate_ode_tolerances
-from lizzy.driven import (
+from lizzy.hamiltonian import Circuit, fold_phases
+from lizzy.synthesis._numerical import (
+    _positive_integer,
+    _time_span,
+    _validate_ode_tolerances,
+)
+from lizzy.synthesis.driven import (
     DrivenHamiltonian,
     IntegrationFailure,
     _closure,
     synthesize_driven,
 )
-from lizzy.hamiltonian import Circuit, fold_phases
 
 
 @dataclass(frozen=True)

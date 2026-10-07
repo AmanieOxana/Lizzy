@@ -15,13 +15,13 @@
 
 from dataclasses import dataclass
 
-from lizzy.hamiltonian import Circuit
-from lizzy.native import (
+from lizzy.emission.native import (
     NativeCircuit,
     ladder_circuit,
     native_frame_candidate,
     native_frame_circuit,
 )
+from lizzy.hamiltonian import Circuit
 
 
 @dataclass(frozen=True, init=False)
@@ -30,7 +30,7 @@ class EmissionQuote:
 
     ``circuit`` deliberately has a backend-dependent type: it is the logical
     :class:`~lizzy.hamiltonian.Circuit` for ``builtin``, a concrete
-    :class:`lizzy.native.NativeCircuit` for ``native-frame``, and a rebased pytket
+    :class:`lizzy.emission.native.NativeCircuit` for ``native-frame``, and a rebased pytket
     circuit for the optional backends. The logical sequence remains available on
     :class:`lizzy.synthesize.Result` for provenance and dense verification. Use
     :attr:`is_concrete` to distinguish an emitted gate count from the builtin

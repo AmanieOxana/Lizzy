@@ -5,8 +5,8 @@ import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
 from experiments import wei_norman_validation as validation
-from lizzy.driven import AlgebraTooLarge, IntegrationFailure
 from lizzy.hamiltonian import Circuit
+from lizzy.synthesis.driven import AlgebraTooLarge, IntegrationFailure
 
 
 def test_strict_global_phase_is_not_hidden_by_aligned_error():

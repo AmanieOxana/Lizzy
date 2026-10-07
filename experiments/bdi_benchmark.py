@@ -18,9 +18,9 @@ from time import perf_counter
 import numpy as np
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy import exact
-from lizzy.classify import summands
+from lizzy.algebra.classify import summands
 from lizzy.dense import circuit_matrix, evolution
+from lizzy.emission.native import ladder_circuit, native_frame_circuit
 from lizzy.hamiltonian import (
     Circuit,
     fold_phases,
@@ -29,7 +29,7 @@ from lizzy.hamiltonian import (
     n_qubits,
     terms_of,
 )
-from lizzy.native import ladder_circuit, native_frame_circuit
+from lizzy.synthesis import exact
 
 from ._validation import _errors, _versions
 

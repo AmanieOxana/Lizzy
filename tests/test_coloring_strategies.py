@@ -2,8 +2,8 @@
 
 import pytest
 
+from lizzy.algebra.symmetry import commuting_clusters
 from lizzy.hamiltonian import hamiltonian, terms_of
-from lizzy.symmetry import commuting_clusters
 
 PAULIS = ["YII", "YIY", "ZYY", "YXX", "XZX", "ZZZ", "YZI"]
 

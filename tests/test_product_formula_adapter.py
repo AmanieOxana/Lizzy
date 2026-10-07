@@ -42,7 +42,7 @@ def test_both_lowerings_preserve_wire_order_phase_and_first_passing_policy() -> 
 def test_final_clifford_t_artifacts_match_original_hamiltonian() -> None:
     pytest.importorskip("qiskit")
     pytest.importorskip("pygridsynth")
-    from lizzy.clifford_t import compile_native_clifford_t
+    from lizzy.emission.clifford_t import compile_native_clifford_t
 
     terms = {"YZ": 0.31, "II": -0.17}
     target = evolution(hamiltonian(terms), -0.43)

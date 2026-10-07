@@ -288,7 +288,7 @@ def cluster_formula(
 
     Each summand's circuit is built once and replayed across steps -- every step
     uses the same step time. ``compile_cluster`` supplies the per-summand emission
-    (kernel layers use :func:`lizzy.kernels.compile_layer`); the default is one
+    (kernel layers use :func:`lizzy.emission.kernels.compile_layer`); the default is one
     plain rotation per term, correct exactly when the summand commutes internally.
     ``middle`` overrides the last summand's emission outright, which is how the free
     part's Givens network enters.

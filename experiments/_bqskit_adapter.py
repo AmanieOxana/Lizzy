@@ -21,7 +21,7 @@ from experiments._compiler_adapters import (
     native_append_clifford,
     native_append_rotation,
 )
-from lizzy.native import NativeCircuit, NativeGate
+from lizzy.emission.native import NativeCircuit, NativeGate
 
 MAX_WIDTH = 3
 TIMEOUT_SECONDS = 120

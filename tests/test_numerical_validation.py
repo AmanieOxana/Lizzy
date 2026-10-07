@@ -2,10 +2,10 @@
 
 import pytest
 
-from lizzy.driven import DrivenHamiltonian, synthesize_driven
-from lizzy.expansions import expand_driven
 from lizzy.hamiltonian import hamiltonian
-from lizzy.wei_norman import synthesize_wei_norman
+from lizzy.synthesis.driven import DrivenHamiltonian, synthesize_driven
+from lizzy.synthesis.expansions import expand_driven
+from lizzy.synthesis.wei_norman import synthesize_wei_norman
 
 
 def _forbidden(*args, **kwargs):

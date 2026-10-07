@@ -14,7 +14,7 @@ from paulie.common.pauli_string_collection import PauliStringCollection
 from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy.gf2 import inverse, rank
+from lizzy.algebra.gf2 import inverse, rank
 from lizzy.hamiltonian import anticommutation_matrix, hamiltonian, terms_of
 
 
@@ -92,7 +92,7 @@ def pair_clusters(hamiltonian_: PauliStringLinear) -> list[PauliStringLinear] | 
     folding is what keeps each kernel's exponential exact, since a field does not
     commute with the pair terms touching its qubit. Kernels on disjoint supports
     commute, so an edge colouring of the interaction graph yields layers that serve
-    directly as the formula's summands; :func:`lizzy.kernels.compile_layer`
+    directly as the formula's summands; :func:`lizzy.emission.kernels.compile_layer`
     emits each kernel as one canonical two-qubit block of at most three CNOTs,
     however many terms it holds. Kernpiler's partial Trotterization
     (arXiv:2504.07214) at the support size where exact synthesis is closed-form.

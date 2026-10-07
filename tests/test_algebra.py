@@ -6,14 +6,8 @@ import numpy as np
 import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
-from lizzy.classify import classify, is_fast_forwardable, summands
-from lizzy.dense import (
-    circuit_matrix,
-    hamiltonian_matrix,
-    monomial_form,
-    pauli_matrix,
-)
-from lizzy.frame import (
+from lizzy.algebra.classify import classify, is_fast_forwardable, summands
+from lizzy.algebra.frame import (
     clifford_to,
     conjugate,
     find_assignment,
@@ -21,7 +15,14 @@ from lizzy.frame import (
     pauli_vectors,
     witt_extend,
 )
-from lizzy.gf2 import gram
+from lizzy.algebra.gf2 import gram
+from lizzy.algebra.symmetry import taper, z2_symmetries
+from lizzy.dense import (
+    circuit_matrix,
+    hamiltonian_matrix,
+    monomial_form,
+    pauli_matrix,
+)
 from lizzy.hamiltonian import (
     Circuit,
     anticommutation_matrix,
@@ -32,7 +33,6 @@ from lizzy.hamiltonian import (
     terms_of,
     weight,
 )
-from lizzy.symmetry import taper, z2_symmetries
 from lizzy.synthesize import synthesize
 
 

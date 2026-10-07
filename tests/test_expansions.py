@@ -6,13 +6,17 @@ from scipy.integrate import solve_ivp
 from scipy.linalg import expm
 
 from lizzy.dense import circuit_matrix, pauli_matrix
-from lizzy.driven import (
+from lizzy.synthesis.driven import (
     AlgebraTooLarge,
     DrivenHamiltonian,
     IntegrationFailure,
     _closure,
 )
-from lizzy.expansions import _PauliBracket, expand_driven, synthesize_expansion
+from lizzy.synthesis.expansions import (
+    _PauliBracket,
+    expand_driven,
+    synthesize_expansion,
+)
 
 METHODS = ("magnus4", "fer4")
 

@@ -15,8 +15,8 @@ from scipy.integrate import solve_ivp
 from scipy.linalg import expm
 
 from lizzy.dense import operator_errors, pauli_matrix
-from lizzy.driven import DrivenHamiltonian
-from lizzy.emit import native_emission_candidates
+from lizzy.emission.emit import native_emission_candidates
+from lizzy.synthesis.driven import DrivenHamiltonian
 
 
 @dataclass(frozen=True)

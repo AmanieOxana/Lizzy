@@ -27,7 +27,7 @@ result = synthesize(H, time=1.0, error=1e-3)
 print(result.routes)
 print(result.two_qubit_gates, result.emission_is_concrete)
 
-from lizzy.native import ladder_circuit
+from lizzy.emission.native import ladder_circuit
 
 native = ladder_circuit(result.circuit, width=2)
 qasm = native.to_qasm3()
@@ -58,8 +58,8 @@ See [accuracy and phase contracts](methods.md).
 
 ```python
 import numpy as np
-from lizzy.driven import DrivenHamiltonian
-from lizzy.wei_norman import synthesize_wei_norman
+from lizzy.synthesis.driven import DrivenHamiltonian
+from lizzy.synthesis.wei_norman import synthesize_wei_norman
 
 drive = DrivenHamiltonian(
     ["X", "Y", "Z"],
@@ -71,11 +71,30 @@ print(driven.charts, driven.two_qubit_gates)
 
 Declare all potentially active controls and supply known pulse boundaries.
 Local ODE tolerances do not certify final unitary error.
-For orbital tensors use `chemistry.synthesize_molecular_ffsim`; for a direct
-OpenFermion quadratic input use `gaussian.from_quadratic`.
+For orbital tensors use `lizzy.fermions.chemistry.synthesize_molecular_ffsim`;
+for direct OpenFermion quadratic input use `lizzy.fermions.gaussian.from_quadratic`.
 [The methods note](methods.md) explains their distinct contracts.
 
 ## Development
+
+The package groups specialist code by responsibility:
+
+```text
+lizzy/
+├── synthesize.py    # Compiler and synthesize: main API
+├── hamiltonian.py   # Inputs and logical circuits
+├── dense.py         # Small verification references
+├── hamlib.py        # Data loading
+├── algebra/        # Classification, symmetries and representation changes
+├── synthesis/      # Exact, product-formula and driven constructions
+├── emission/       # Native and Clifford+T gate artifacts
+└── fermions/       # OpenFermion and ffsim adapters
+```
+
+`lizzy.synthesize.Compiler` and `synthesize` keep their import paths. Direct
+specialist imports use the subpackages, as in `lizzy.synthesis.driven` and
+`lizzy.emission.native` above; the old flat paths are not compatibility aliases.
+Persisted pickles naming moved specialist classes also require migration.
 
 Run `python -m pytest -q`. Optional integrations skip when dependencies are
 absent; tests do not download data. [Reproduce results](reproduce.md)

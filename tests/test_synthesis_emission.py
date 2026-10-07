@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
-from lizzy._routing import _formula_plan, _repeated_plan
 from lizzy.dense import circuit_matrix, evolution, infidelity
-from lizzy.emit import EmissionQuote
+from lizzy.emission.emit import EmissionQuote
 from lizzy.hamiltonian import Circuit, hamiltonian, model, terms_of
+from lizzy.synthesis._routing import _formula_plan, _repeated_plan
 from lizzy.synthesize import Compiler, synthesize
 
 
@@ -55,7 +55,7 @@ def test_result_is_quoted_once_more_as_a_complete_circuit(monkeypatch) -> None:
 
 
 def test_high_weight_fixed_depth_considers_independent_set(monkeypatch) -> None:
-    import lizzy._routing as synthesis_module
+    import lizzy.synthesis._routing as synthesis_module
 
     h = hamiltonian(
         {
@@ -106,7 +106,7 @@ def test_large_route_estimation_is_reported_separately_from_error_guarantee() ->
 
 
 def test_t_objective_keeps_reference_when_optional_gauge_compilation_fails(monkeypatch):
-    import lizzy.clifford_t as backend
+    import lizzy.emission.clifford_t as backend
     import lizzy.synthesize as synthesis_module
 
     logical = Circuit()
@@ -165,7 +165,7 @@ def test_t_objective_combines_commuting_parts_and_preserves_phase_without_depend
 def test_auto_t_prices_complete_candidates_at_one_budget_and_retains_winner(
     monkeypatch, counts, selected,
 ):
-    import lizzy.clifford_t as backend
+    import lizzy.emission.clifford_t as backend
     import lizzy.synthesize as synthesis_module
 
     def prepare(operator, *, optimize="none", **kwargs):
@@ -207,9 +207,9 @@ def test_auto_t_prices_complete_candidates_at_one_budget_and_retains_winner(
 
 
 def test_auto_t_keeps_valid_fallback_and_distinguishes_unavailable_from_unsupported(monkeypatch):
-    import lizzy.clifford_t as backend
+    import lizzy.emission.clifford_t as backend
     import lizzy.synthesize as synthesis_module
-    from lizzy import gaussian
+    from lizzy.fermions import gaussian
 
     operator = hamiltonian({"Z": math.pi / 8})
     real_compile = backend.compile_clifford_t
@@ -254,9 +254,9 @@ def test_auto_t_rejects_product_formula_controls_and_numerical_dispatch():
 
 
 def test_shared_frames_obey_global_not_per_route_cost_caps(monkeypatch):
-    import lizzy.clifford_t as backend
+    import lizzy.emission.clifford_t as backend
     import lizzy.synthesize as synthesis_module
-    from lizzy import gaussian
+    from lizzy.fermions import gaussian
 
     def logical(word, route):
         circuit = Circuit()
@@ -311,7 +311,7 @@ def test_public_shared_frame_improves_encoded_su2_with_retained_artifact():
 
 
 def test_auto_cx_gives_both_exact_algorithms_equal_emission_effort(monkeypatch):
-    import lizzy._routing as synthesis_module
+    import lizzy.synthesis._routing as synthesis_module
 
     operator = hamiltonian({"XXX": 0.7, "XXY": -0.2, "IIZ": 0.4})
     calls = []
@@ -335,9 +335,9 @@ def test_auto_cx_gives_both_exact_algorithms_equal_emission_effort(monkeypatch):
 
 @pytest.mark.parametrize("objective", ["cx", "t"])
 def test_gaussian_delegation_skips_dla_work_and_reports_comparison_cap(monkeypatch, objective):
-    import lizzy.emit as emission_module
+    import lizzy.emission.emit as emission_module
     import lizzy.synthesize as synthesis_module
-    from lizzy import gaussian
+    from lizzy.fermions import gaussian
 
     def no_dla_work(*args, **kwargs):
         pytest.fail("Explicit or large delegated Gaussian synthesis must not classify or split a DLA")
@@ -385,7 +385,7 @@ def test_gaussian_delegation_skips_dla_work_and_reports_comparison_cap(monkeypat
 
 
 def test_gaussian_optional_dependency_falls_back_only_in_auto(monkeypatch):
-    from lizzy import gaussian
+    from lizzy.fermions import gaussian
 
     operator = hamiltonian({"Z": math.pi / 8})
 
@@ -405,8 +405,8 @@ def test_gaussian_optional_dependency_falls_back_only_in_auto(monkeypatch):
 
 
 def test_auto_gaussian_t_candidate_receives_whole_input_and_common_budget(monkeypatch):
-    import lizzy.clifford_t as backend
-    from lizzy import gaussian
+    import lizzy.emission.clifford_t as backend
+    from lizzy.fermions import gaussian
 
     operator = hamiltonian({"ZI": math.pi / 8, "IZ": -math.pi / 4, "II": 0.19})
     calls, compiled = [], []
@@ -445,7 +445,7 @@ def test_auto_gaussian_t_candidate_receives_whole_input_and_common_budget(monkey
 def test_auto_gaussian_cx_compares_complete_artifacts_and_retains_scalar_phase(monkeypatch):
     pytest.importorskip("openfermion")
     import lizzy.synthesize as synthesis_module
-    from lizzy.native import NativeGate, ladder_circuit
+    from lizzy.emission.native import NativeGate, ladder_circuit
 
     operator = hamiltonian({"ZI": 0.31, "IZ": -0.17, "II": 0.19})
     previous = []

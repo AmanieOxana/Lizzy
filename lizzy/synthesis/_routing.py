@@ -10,14 +10,15 @@ from dataclasses import dataclass, field
 from numpy.linalg import LinAlgError
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy import exact, trotter
-from lizzy.classify import summands
-from lizzy.emit import (
+from lizzy.algebra.classify import summands
+from lizzy.algebra.symmetry import commuting_clusters, pair_clusters
+from lizzy.emission.emit import (
     EmissionQuote,
     emission_candidates,
     greedy_emission_quote,
     shared_frame_candidate,
 )
+from lizzy.emission.kernels import compile_layer
 from lizzy.hamiltonian import (
     Circuit,
     fold_phases,
@@ -27,8 +28,7 @@ from lizzy.hamiltonian import (
     terms_of,
     weight,
 )
-from lizzy.kernels import compile_layer
-from lizzy.symmetry import commuting_clusters, pair_clusters
+from lizzy.synthesis import exact, trotter
 
 # Structurally eligible decompositions may still fail their numerical mapping.
 _EXACT_FAILURES = (StopIteration, NotImplementedError, ValueError, LinAlgError)
@@ -157,7 +157,7 @@ def select_exact_t(
     """
     import math
 
-    from lizzy.clifford_t import compile_clifford_t, compile_frame_candidates
+    from lizzy.emission.clifford_t import compile_clifford_t, compile_frame_candidates
 
     if isinstance(error, bool) or not math.isfinite(error) or not 0 < error < 1:
         raise ValueError("T synthesis error must be finite and between zero and one")

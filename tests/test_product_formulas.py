@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from lizzy.algebra.symmetry import commuting_clusters
 from lizzy.dense import (
     circuit_matrix,
     evolution,
@@ -14,8 +15,7 @@ from lizzy.hamiltonian import (
     model,
     terms_of,
 )
-from lizzy.symmetry import commuting_clusters
-from lizzy.trotter import (
+from lizzy.synthesis.trotter import (
     _collected_commutator,
     cluster_formula,
     coefficient_norm,

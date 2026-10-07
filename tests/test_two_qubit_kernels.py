@@ -19,7 +19,7 @@ def test_noncommuting_kernels_compile_exactly() -> None:
     """A kernel with fields folded in is not internally commuting, and its KAK
     emission must still equal the 4x4 exponential -- checked here through the dense
     machinery, on top of the self-check every kernel runs at synthesis time."""
-    from lizzy.kernels import compile_kernel
+    from lizzy.emission.kernels import compile_kernel
 
     h = hamiltonian({"IXIX": 0.3, "IYIZ": -0.7, "IZIY": 0.2, "IXII": 0.5, "IIIZ": -0.4})
     tau = 0.9
@@ -37,7 +37,7 @@ def test_a_pair_block_is_charged_its_canonical_class() -> None:
     phase-based diagonalization has degenerate eigenspaces there and used to erase the
     SWAP point's three nonlocal coordinates entirely.
     """
-    from lizzy.kernels import canonical_cost
+    from lizzy.emission.kernels import canonical_cost
 
     def block(*words, angle=0.3):
         circuit = Circuit()

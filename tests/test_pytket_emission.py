@@ -9,7 +9,7 @@ from pytket import OpType
 from pytket.passes import AutoRebase, DecomposeBoxes
 
 from lizzy.dense import circuit_matrix, infidelity
-from lizzy.emit import (
+from lizzy.emission.emit import (
     direct_tket_circuit,
     tket_circuit,
 )
@@ -91,4 +91,3 @@ def test_emission_is_exact_and_reports_its_actual_count(emitter) -> None:
     assert {command.op.type for command in commands} <= {OpType.CX, OpType.TK1}
     assert infidelity(circuit_matrix(circuit, 3), emitted.get_unitary()) < 1e-12
     assert emitted.n_2qb_gates() == actual_two_qubit_gates
-

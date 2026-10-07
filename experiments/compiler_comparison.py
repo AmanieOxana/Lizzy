@@ -27,11 +27,10 @@ from experiments._compiler_adapters import (
 )
 from experiments._flagsynth_adapter import flagsynth_sdm_candidates
 from experiments._product_formula_adapter import qiskit_product_formula_candidates
-from lizzy import exact
-from lizzy.classify import summands
-from lizzy.clifford_t import compile_native_clifford_t
+from lizzy.algebra.classify import summands
 from lizzy.dense import evolution, operator_errors
-from lizzy.driven import AlgebraTooLarge, IntegrationFailure
+from lizzy.emission.clifford_t import compile_native_clifford_t
+from lizzy.emission.native import ladder_circuit
 from lizzy.hamiltonian import (
     Circuit,
     fold_phases,
@@ -40,9 +39,10 @@ from lizzy.hamiltonian import (
     n_qubits,
     terms_of,
 )
-from lizzy.native import ladder_circuit
+from lizzy.synthesis import exact
+from lizzy.synthesis.driven import AlgebraTooLarge, IntegrationFailure
+from lizzy.synthesis.wei_norman import synthesize_wei_norman
 from lizzy.synthesize import synthesize
-from lizzy.wei_norman import synthesize_wei_norman
 
 SEED = 20261007
 METHODS = ("lizzy-auto", "lizzy-bdi", "lizzy-givens", "lizzy-wei-norman",
@@ -305,8 +305,10 @@ def main():
     sources = ("experiments/compiler_comparison.py", "experiments/compiler_comparison_protocol.md",
                "experiments/_compiler_adapters.py", "experiments/_flagsynth_adapter.py",
                "experiments/_bqskit_adapter.py", "experiments/_product_formula_adapter.py",
-               "lizzy/synthesize.py", "lizzy/_routing.py", "lizzy/gaussian.py", "lizzy/clifford_t.py", "lizzy/exact.py", "lizzy/native.py", "lizzy/wei_norman.py",
-               "lizzy/driven.py", "lizzy/_orthogonal_mapping.py", "lizzy/dense.py", "lizzy/emit.py")
+               "lizzy/synthesize.py", "lizzy/synthesis/_routing.py", "lizzy/fermions/gaussian.py",
+               "lizzy/emission/clifford_t.py", "lizzy/synthesis/exact.py", "lizzy/emission/native.py",
+               "lizzy/synthesis/wei_norman.py", "lizzy/synthesis/driven.py",
+               "lizzy/algebra/_orthogonal_mapping.py", "lizzy/dense.py", "lizzy/emission/emit.py")
     report["source_sha256"] = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                                for name in sources}
 

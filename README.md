@@ -34,6 +34,10 @@ advantage or a chemistry-wide improvement.
 [Get started](docs/getting_started.md) · [Results](docs/compiler_comparison.md) ·
 [Methods and limits](docs/methods.md)
 
+The [package layout](docs/getting_started.md#development) separates algebra,
+synthesis, emission and fermionic adapters. The main `Compiler`/`synthesize`
+interface remains in `lizzy.synthesize`.
+
 Build the Sphinx documentation locally:
 
 ```bash

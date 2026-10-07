@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
-from lizzy.clifford_t import (
+from lizzy.emission.clifford_t import (
     CliffordTCircuit,
     CliffordTGate,
     compile_clifford_t,
@@ -15,8 +15,8 @@ from lizzy.clifford_t import (
     compile_native_clifford_t,
     estimate_rotation_t_count,
 )
+from lizzy.emission.native import NativeCircuit, NativeGate, ladder_circuit
 from lizzy.hamiltonian import Circuit
-from lizzy.native import NativeCircuit, NativeGate, ladder_circuit
 
 
 def _circuit(*rotations):
@@ -97,7 +97,7 @@ def test_invalid_budget_and_failed_local_bound_are_rejected(monkeypatch) -> None
     for budget in (0, -1, 1, np.inf, np.nan):
         with pytest.raises(ValueError):
             compile_clifford_t(Circuit(), 0, error=budget)
-    import lizzy.clifford_t as backend
+    import lizzy.emission.clifford_t as backend
     monkeypatch.setattr(backend, "_gridsynth_rotation", lambda *_: ((), 0.0, 0.5))
     with pytest.raises(ValueError, match="exceeded"):
         compile_clifford_t(_circuit(("Z", 0.123)), 1, error=1e-6)
@@ -117,7 +117,7 @@ def test_real_backend_multipauli_phase_order_and_error() -> None:
 
 def test_real_backend_negative_angles_reuse_exact_inverse_word(monkeypatch) -> None:
     pytest.importorskip("pygridsynth")
-    import lizzy.clifford_t as backend
+    import lizzy.emission.clifford_t as backend
     original = backend._gridsynth_rotation
     calls = []
 
@@ -144,7 +144,7 @@ def test_real_backend_rejects_wrong_gate_word(monkeypatch) -> None:
 
 def test_real_backend_zero_and_clifford_padding_do_not_consume_precision_slots(monkeypatch) -> None:
     pytest.importorskip("pygridsynth")
-    import lizzy.clifford_t as backend
+    import lizzy.emission.clifford_t as backend
     original = backend._gridsynth_rotation
     precisions = []
 
@@ -175,7 +175,7 @@ def test_real_backend_zero_and_clifford_padding_do_not_consume_precision_slots(m
 
 
 def test_frame_portfolio_isolates_failures_deduplicates_and_normalizes_phase(monkeypatch) -> None:
-    import lizzy.clifford_t as backend
+    import lizzy.emission.clifford_t as backend
 
     logical = _circuit(("II", 1e16), ("II", 0.37), ("II", -1e16), ("XI", 0.2))
     bad = NativeCircuit(2, [NativeGate("h", (0,))], 19.0)

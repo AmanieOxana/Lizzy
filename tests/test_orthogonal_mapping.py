@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from kak_tools import map_irrep_to_matrices, pauli_word_to_string
 
-from lizzy._orthogonal_mapping import map_orthogonal
+from lizzy.algebra._orthogonal_mapping import map_orthogonal
 from lizzy.hamiltonian import model, terms_of
 
 
@@ -53,7 +53,7 @@ def test_unsupported_algebra_is_rejected_before_closure(monkeypatch):
     def no_closure(*args, **kwargs):
         pytest.fail("unsupported classifications must not enter the Lie closure")
 
-    monkeypatch.setattr("lizzy._orthogonal_mapping.dla_pauli_basis", no_closure)
+    monkeypatch.setattr("lizzy.algebra._orthogonal_mapping.dla_pauli_basis", no_closure)
     words = tuple(str(word) for _, word in terms_of(model("heisenberg", 4, seed=7)))
     with pytest.raises(NotImplementedError, match="single so\\(m\\) presentation"):
         map_orthogonal(words, 4)

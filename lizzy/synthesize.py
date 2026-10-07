@@ -10,22 +10,22 @@ from typing import TYPE_CHECKING
 
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy import exact
-from lizzy._routing import (
+from lizzy.algebra.classify import classify, summands
+from lizzy.algebra.symmetry import commuting_clusters, z2_symmetries
+from lizzy.emission.emit import EmissionQuote, best_emission, native_emission_candidates
+from lizzy.hamiltonian import Circuit, fold_phases, n_qubits, terms_of
+from lizzy.synthesis import exact
+from lizzy.synthesis._routing import (
     _EXACT_FAILURES,
     select_exact_t,
     select_part,
 )
-from lizzy._routing import (
+from lizzy.synthesis._routing import (
     TCountSelection as TCountSelection,
 )
-from lizzy.classify import classify, summands
-from lizzy.emit import EmissionQuote, best_emission, native_emission_candidates
-from lizzy.hamiltonian import Circuit, fold_phases, n_qubits, terms_of
-from lizzy.symmetry import commuting_clusters, z2_symmetries
 
 if TYPE_CHECKING:
-    from lizzy.wei_norman import WeiNormanResult
+    from lizzy.synthesis.wei_norman import WeiNormanResult
 
 # The Gaussian decomposition is polynomial; only the optional DLA comparison is capped.
 _GAUSSIAN_COMPARE_MAX_MODES = 8
@@ -130,7 +130,8 @@ class Compiler:
     Use Compiler(objective="t", error=1e-6).compile(H, time) to apply one policy
     to multiple Hamiltonians. Arguments and accuracy contracts are identical to
     synthesize(). Reusing a compiler does not cache a Hamiltonian's decomposition;
-    use exact.prepare_bdi or driven.WeiNormanBasis for algebraic preparation.
+    use ``lizzy.synthesis.exact.prepare_bdi`` or
+    ``lizzy.synthesis.driven.WeiNormanBasis`` for algebraic preparation.
     """
 
     error: float = 1e-3
@@ -180,7 +181,7 @@ class Compiler:
         randomized, calibration, steps = self.randomized, self.calibration, self.steps
         numerical_options = self.numerical_options
         if method == "wei-norman":
-            from lizzy.wei_norman import synthesize_wei_norman
+            from lizzy.synthesis.wei_norman import synthesize_wei_norman
 
             compiled = synthesize_wei_norman(hamiltonian_, time, **(numerical_options or {}))
             return Result(
@@ -196,7 +197,7 @@ class Compiler:
         width = n_qubits(hamiltonian_)
         gaussian_circuit, gaussian_failure = None, None
         if method in {"auto", "gaussian"}:
-            from lizzy import gaussian
+            from lizzy.fermions import gaussian
 
             if method == "gaussian" or gaussian.is_gaussian(hamiltonian_):
                 try:
@@ -373,7 +374,7 @@ def synthesize(
     ``method='wei-norman'`` explicitly requests numerical Lie-coordinate synthesis
     and concrete phase-preserving native gate emission. That route does NOT promise
     the ``error`` budget: ``numerical_options`` passes local tolerances and resource
-    limits to :func:`lizzy.wei_norman.synthesize_wei_norman`. Its diagnostics are in
+    limits to :func:`lizzy.synthesis.wei_norman.synthesize_wei_norman`. Its diagnostics are in
     ``result.numerical`` and ``error_guaranteed`` is always false. Product-formula
     controls cannot be combined with the explicit numerical route.
 

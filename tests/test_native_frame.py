@@ -7,9 +7,8 @@ import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
 from lizzy.dense import circuit_matrix, evolution, infidelity
-from lizzy.emit import best_emission
-from lizzy.hamiltonian import Circuit, anticommutation_matrix, hamiltonian
-from lizzy.native import (
+from lizzy.emission.emit import best_emission
+from lizzy.emission.native import (
     NativeCircuit,
     NativeGate,
     frame_profile,
@@ -17,6 +16,7 @@ from lizzy.native import (
     native_frame_candidates,
     native_frame_circuit,
 )
+from lizzy.hamiltonian import Circuit, anticommutation_matrix, hamiltonian
 from lizzy.synthesize import Result, synthesize
 
 

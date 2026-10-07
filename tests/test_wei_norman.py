@@ -6,11 +6,15 @@ from scipy.integrate import solve_ivp
 from scipy.linalg import expm
 
 from lizzy.dense import evolution, pauli_matrix
-from lizzy.driven import AlgebraTooLarge, DrivenHamiltonian, IntegrationFailure
+from lizzy.emission.native import NativeCircuit
 from lizzy.hamiltonian import hamiltonian
-from lizzy.native import NativeCircuit
+from lizzy.synthesis.driven import (
+    AlgebraTooLarge,
+    DrivenHamiltonian,
+    IntegrationFailure,
+)
+from lizzy.synthesis.wei_norman import synthesize_wei_norman
 from lizzy.synthesize import synthesize
-from lizzy.wei_norman import synthesize_wei_norman
 
 
 def test_static_su4_produces_a_concrete_phase_preserving_circuit():
@@ -179,7 +183,7 @@ def test_zero_duration_never_evaluates_a_driven_callback():
 
 
 def test_basis_order_is_prepared_once_per_component_across_pulses(monkeypatch):
-    from lizzy import driven, wei_norman
+    from lizzy.synthesis import driven, wei_norman
 
     calls = {"closure": 0, "adjoints": 0}
     real_closure, real_pairs = driven._closure, driven._adjoint_pairs

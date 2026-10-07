@@ -1,6 +1,6 @@
 """End-to-end numerical Wei–Norman synthesis of static and driven Pauli sums.
 
-The established Wei–Norman equations are implemented in :mod:`lizzy.driven`.
+The established Wei–Norman equations are implemented in :mod:`lizzy.synthesis.driven`.
 This module adds commuting-component reduction, explicit pulse boundaries,
 shared resource budgets and phase-preserving, concrete native gate emission.
 No dense Hilbert-space matrices are used and no global error certificate is
@@ -15,8 +15,14 @@ import numpy as np
 from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy._numerical import _positive_integer, _time_span, _validate_chart_controls
-from lizzy.driven import (
+from lizzy.emission.emit import EmissionQuote, native_emission_candidates
+from lizzy.hamiltonian import Circuit, fold_phases
+from lizzy.synthesis._numerical import (
+    _positive_integer,
+    _time_span,
+    _validate_chart_controls,
+)
+from lizzy.synthesis.driven import (
     AlgebraTooLarge,
     DrivenHamiltonian,
     DrivenResult,
@@ -25,8 +31,6 @@ from lizzy.driven import (
     _closure,
     synthesize_driven,
 )
-from lizzy.emit import EmissionQuote, native_emission_candidates
-from lizzy.hamiltonian import Circuit, fold_phases
 
 
 @dataclass

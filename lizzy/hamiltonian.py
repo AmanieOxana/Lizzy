@@ -13,7 +13,7 @@ import numpy as np
 from paulie.common.pauli_string_bitarray import PauliString
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy import gf2
+from lizzy.algebra import gf2
 
 # Rotating about a Pauli string of weight w costs 2(w-1) two-qubit gates: a CNOT ladder
 # onto one qubit, the rotation, and the ladder back.
@@ -108,7 +108,7 @@ def _block_charge(support: frozenset, cost: int, run: list) -> int:
         return cost
     if len(support) < 2 or cost == 0:
         return 0
-    from lizzy.kernels import canonical_cost
+    from lizzy.emission.kernels import canonical_cost
 
     pair = tuple(sorted(support))
     return min(cost, canonical_cost([(str(p), a) for p, a in run], pair))

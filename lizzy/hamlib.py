@@ -16,7 +16,7 @@ from pathlib import Path
 
 from paulie.common.pauli_string_linear import PauliStringLinear
 
-from lizzy.chemistry import (
+from lizzy.fermions.chemistry import (
     MolecularHamiltonian,
     fermion_operator_openfermion,
     molecular_from_openfermion_ffsim,

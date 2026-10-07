@@ -15,8 +15,12 @@ from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 from scipy.integrate import solve_ivp
 
-from lizzy._numerical import _positive_integer, _time_span, _validate_chart_controls
 from lizzy.hamiltonian import Circuit, fold_phases, terms_of, weight
+from lizzy.synthesis._numerical import (
+    _positive_integer,
+    _time_span,
+    _validate_chart_controls,
+)
 
 
 def _real_vector(values, size: int) -> np.ndarray:

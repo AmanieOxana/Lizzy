@@ -5,10 +5,10 @@ import builtins
 import numpy as np
 import pytest
 
-from lizzy import gaussian
 from lizzy.dense import circuit_matrix, evolution
+from lizzy.emission.native import native_frame_circuit
+from lizzy.fermions import gaussian
 from lizzy.hamiltonian import hamiltonian, model
-from lizzy.native import native_frame_circuit
 
 
 def test_general_quadratic_paulis_preserve_full_unitary_without_dense_synthesis(monkeypatch):
@@ -103,7 +103,7 @@ def test_tiny_terms_are_never_silently_discarded_and_dependencies_remain_optiona
 def test_gaussian_circuit_uses_existing_clifford_t_backend_with_scalar_phase():
     pytest.importorskip("openfermion")
     pytest.importorskip("pygridsynth")
-    from lizzy.clifford_t import compile_native_clifford_t
+    from lizzy.emission.clifford_t import compile_native_clifford_t
 
     terms = {"XX": 0.31, "YY": -0.17, "ZI": 0.13, "II": 0.27}
     logical = gaussian.decompose(terms, -0.4)

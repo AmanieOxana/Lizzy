@@ -7,9 +7,9 @@ import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
 from lizzy.dense import circuit_matrix
-from lizzy.emit import EmissionQuote, best_emission, native_emission_candidates
+from lizzy.emission.emit import EmissionQuote, best_emission, native_emission_candidates
+from lizzy.emission.native import ladder_circuit
 from lizzy.hamiltonian import Circuit
-from lizzy.native import ladder_circuit
 from lizzy.synthesize import Result
 
 
@@ -46,7 +46,8 @@ def test_opaque_artifact_does_not_claim_concrete_count() -> None:
 def test_native_portfolio_preserves_phase_order_and_caller_failure_policies(monkeypatch):
     import lizzy.synthesize as synthesis
     from experiments._validation import _emission
-    from lizzy import emit, wei_norman
+    from lizzy.emission import emit
+    from lizzy.synthesis import wei_norman
 
     logical = _logical_pair()
     logical.add(get_pauli_string("II"), 0.37, "test")

@@ -20,7 +20,7 @@ from experiments._compiler_adapters import (
     native_append_clifford,
     native_append_rotation,
 )
-from lizzy.native import NativeCircuit
+from lizzy.emission.native import NativeCircuit
 
 _SDM_LOCK = Lock()
 _KEYWORD_BRIDGE = "recursive_flag_decomp_cliff_rz: selective_demux -> use_sdm"

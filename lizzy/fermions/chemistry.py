@@ -16,7 +16,7 @@ from numbers import Integral, Real
 
 import numpy as np
 
-from lizzy._chemistry_extensions import (
+from lizzy.fermions._chemistry_extensions import (
     optimized_frame_order,
     prune_double_factorization,
     reorder_double_factorization,
@@ -179,7 +179,7 @@ def to_ffsim(molecular):
         return molecular
     if not isinstance(molecular, MolecularHamiltonian):
         raise TypeError(
-            "molecular must be lizzy.chemistry.MolecularHamiltonian or "
+            "molecular must be lizzy.fermions.chemistry.MolecularHamiltonian or "
             "ffsim.MolecularHamiltonian"
         )
     return ffsim.MolecularHamiltonian(
