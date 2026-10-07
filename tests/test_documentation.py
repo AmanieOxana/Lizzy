@@ -13,12 +13,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_getting_started_python_examples_run():
-    source = (ROOT / "docs/getting_started.md").read_text()
-    examples = re.findall(r"```python\n(.*?)```", source, re.DOTALL)
-    assert examples, "Getting started must retain an executable quick start"
-    for index, code in enumerate(examples, 1):
-        exec(compile(code, f"getting_started.md example {index}", "exec"), {})
+def test_quick_start_python_examples_run():
+    for document in ("README.md", "docs/getting_started.md"):
+        source = (ROOT / document).read_text()
+        examples = re.findall(r"```python\n(.*?)```", source, re.DOTALL)
+        assert examples, f"{document} must retain an executable quick start"
+        for index, code in enumerate(examples, 1):
+            exec(compile(code, f"{document} example {index}", "exec"), {})
 
 
 def test_local_documentation_links_resolve():

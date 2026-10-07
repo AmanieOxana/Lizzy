@@ -105,3 +105,12 @@ Persisted pickles naming moved specialist classes also require migration.
 
 See [Run the checks](reproduce.md) for tests, compiler comparisons and figure
 generation.
+
+To build the Sphinx documentation locally:
+
+```bash
+python -m pip install -e '.[docs]'
+python -m sphinx -W --keep-going -b html docs docs/_build/html
+```
+
+Open `docs/_build/html/index.html`. This does not publish the site.
