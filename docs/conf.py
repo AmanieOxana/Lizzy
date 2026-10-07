@@ -12,6 +12,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
+    "sphinx.ext.githubpages",
 ]
 source_suffix = {".md": "markdown"}
 root_doc = "index"
@@ -22,4 +23,5 @@ autodoc_typehints = "none"
 autodoc_member_order = "bysource"
 html_theme = "alabaster"
 html_title = "Lizzy: structure-aware synthesis"
+html_baseurl = "https://amanieoxana.github.io/Lizzy/"
 html_theme_options = {"description": "Hamiltonian evolution from algebraic structure"}

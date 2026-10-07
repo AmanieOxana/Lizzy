@@ -20,7 +20,7 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/AmanieOxana/Lizzy"
-Documentation = "https://github.com/AmanieOxana/Lizzy/tree/main/docs"
+Documentation = "https://amanieoxana.github.io/Lizzy/"
 Issues = "https://github.com/AmanieOxana/Lizzy/issues"
 
 [project.optional-dependencies]

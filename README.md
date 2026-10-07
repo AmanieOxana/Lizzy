@@ -26,9 +26,11 @@ circuit = ladder_circuit(result.circuit, width=2)
 print(circuit.to_qasm3())
 ```
 
-- [Getting started](docs/getting_started.md): setup and examples.
-- [Methods](docs/methods.md): constructions and their limits.
-- [Results](docs/compiler_comparison.md): compiler comparison.
+[Documentation](https://amanieoxana.github.io/Lizzy/):
+
+- [Getting started](https://amanieoxana.github.io/Lizzy/getting_started.html): setup and examples.
+- [Methods](https://amanieoxana.github.io/Lizzy/methods.html): constructions and their limits.
+- [Results](https://amanieoxana.github.io/Lizzy/compiler_comparison.html): compiler comparison.
 
 Named in honor of Elizabeth Meckes.
 
