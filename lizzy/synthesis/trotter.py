@@ -13,6 +13,7 @@
 """
 
 import math
+from numbers import Integral, Real
 
 import numpy as np
 from paulie.common.pauli_string_linear import PauliStringLinear
@@ -32,6 +33,38 @@ class _Exhausted(Exception):
 
 # Cluster error constants by cluster contents; see cluster_error_constant.
 _constant_cache: dict = {}
+
+
+def _validate_steps(steps: int) -> None:
+    if isinstance(steps, bool) or not isinstance(steps, Integral) or steps < 1:
+        raise ValueError("steps must be a positive integer")
+
+
+def _validate_order(order: int) -> None:
+    if (
+        isinstance(order, bool)
+        or not isinstance(order, Integral)
+        or order < 1
+        or (order > 1 and order % 2)
+    ):
+        raise ValueError("order must be 1 or a positive even integer")
+
+
+def _validate_real(value: float, name: str, *, positive: bool = False) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, Real)
+        or not math.isfinite(value)
+        or (positive and value <= 0)
+    ):
+        qualifier = "positive finite" if positive else "finite"
+        raise ValueError(f"{name} must be a {qualifier} real number")
+
+
+def _validate_estimate(time: float, error: float, calibration: float = 1.0) -> None:
+    _validate_real(time, "time")
+    _validate_real(error, "error", positive=True)
+    _validate_real(calibration, "calibration", positive=True)
 
 
 # Suzuki's recursion multiplies the stage count by 5 at each order, so a formula of
@@ -261,12 +294,13 @@ def steps_for_clusters(
         int | None: Number of steps, or ``None`` if the constant was not computable
         within budget.
     """
+    _validate_estimate(time, error, calibration)
     constant = cluster_error_constant(clusters)
     if constant is None:
         return None
     if constant == 0.0:
         return 1
-    return max(1, math.ceil(math.sqrt(constant * time**3 / error) / calibration))
+    return max(1, math.ceil(math.sqrt(constant * abs(time)**3 / error) / calibration))
 
 
 def cluster_formula(
@@ -303,6 +337,8 @@ def cluster_formula(
     Returns:
         Circuit: The rotations.
     """
+    _validate_steps(steps)
+    _validate_real(time, "time")
     if compile_cluster is None:
 
         def compile_cluster(cluster, tau, label):
@@ -333,7 +369,7 @@ def _steps_from(
 ) -> int:
     r"""Turn an error constant into a step count.
 
-    The error of ``N`` steps is :math:`\alpha t^{p+1}/N^{p}`, halved at first order
+    The error of ``N`` steps is :math:`\alpha |t|^{p+1}/N^{p}`, halved at first order
     where :math:`\alpha` is the pairwise commutator sum. A residual of zero means the
     formula is already exact. ``calibration`` divides the result.
     """
@@ -342,7 +378,7 @@ def _steps_from(
     if order == 1:
         steps = residual * time**2 / (2 * error)
     else:
-        steps = (residual * time ** (order + 1) / error) ** (1 / order)
+        steps = (residual * abs(time) ** (order + 1) / error) ** (1 / order)
     return max(1, math.ceil(steps / calibration))
 
 
@@ -354,13 +390,13 @@ def steps_for(
     calibration: float = 1.0,
 ) -> int:
     r"""
-    Get the number of product-formula steps that fits an error budget.
+    Size a product formula for a target error; higher-order sizing is an estimate.
 
     At first order the bound is the rigorous commutator one,
     :math:`\varepsilon \le t^{2}/(2N) \sum_{a<b}\lVert[H_a,H_b]\rVert`, so the step
     count follows directly.
 
-    Above first order the error is :math:`\alpha_{\mathrm{comm}}t^{p+1}/N^{p}` with
+    Above first order the error estimate is :math:`\alpha_{\mathrm{comm}}|t|^{p+1}/N^{p}` with
     :math:`\alpha_{\mathrm{comm}}` from :func:`nested_commutator_sum`. On a
     geometrically local Hamiltonian only neighbouring terms anticommute, so
     :math:`\alpha_{\mathrm{comm}}` grows linearly in the qubit count where
@@ -369,8 +405,8 @@ def steps_for(
     :math:`\bigl(\sum_{a<b}\lVert[H_a,H_b]\rVert\bigr)\Lambda^{p-1}`, which still uses
     the commutator structure once instead of not at all.
 
-    The formula-dependent prefactor is taken as one throughout, so **the result is an
-    estimate, not a certificate**. Independent dense-reference tests check the
+    Above first order the formula-dependent prefactor is taken as one, so **the
+    result is an estimate, not a certificate**. Independent dense-reference tests check the
     achieved error wherever the qubit count allows.
 
     Because the bound sums over every chain with a triangle inequality and the true error
@@ -383,19 +419,17 @@ def steps_for(
         time (float): Evolution time.
         error (float): Target error.
         order (int): Formula order: 1, or an even Suzuki order such as 2 or 4.
-        calibration (float): Divide the estimated count by this. One leaves the bound
-            alone; larger values trade the guarantee for a measured factor.
+        calibration (float): Divide the count by this. Values at most one retain
+            the first-order bound; higher-order counts remain estimates at any setting.
     Returns:
         int: Number of steps, at least one.
 
     Raises:
-        ValueError: If the order is neither 1 nor a positive even number, or if
-            ``calibration`` is not positive.
+        ValueError: If the order is neither 1 nor a positive even integer, time is
+            not finite, or error or calibration is not positive and finite.
     """
-    if order < 1 or (order > 1 and order % 2):
-        raise ValueError(f"Order must be 1 or a positive even number, got {order}.")
-    if calibration <= 0:
-        raise ValueError(f"Calibration must be positive, got {calibration}.")
+    _validate_order(order)
+    _validate_estimate(time, error, calibration)
 
     pairwise = commutator_sum(hamiltonian_)
     if order == 1:
@@ -443,6 +477,9 @@ def product_formula(
     Returns:
         Circuit: The rotations.
     """
+    _validate_steps(steps)
+    _validate_order(order)
+    _validate_real(time, "time")
     terms = terms_of(hamiltonian_)
     sequence = _suzuki_sequence(len(terms), order)
 
@@ -484,6 +521,7 @@ def qdrift(
     Returns:
         Circuit: One sampled circuit.
     """
+    _validate_estimate(time, error)
     terms = terms_of(hamiltonian_)
     norm = coefficient_norm(hamiltonian_)
     if norm == 0.0:
@@ -554,6 +592,8 @@ def product_formula_cost(
     Returns:
         int: Estimated two-qubit gate count.
     """
+    _validate_order(order)
+    _validate_estimate(time, error, calibration)
     terms = terms_of(hamiltonian_)
     if not terms:
         return 0
@@ -579,6 +619,7 @@ def qdrift_cost(hamiltonian_: PauliStringLinear, time: float, error: float) -> i
     Returns:
         int: Estimated two-qubit gate count.
     """
+    _validate_estimate(time, error)
     terms = terms_of(hamiltonian_)
     norm = coefficient_norm(hamiltonian_)
     if not terms or norm == 0.0:

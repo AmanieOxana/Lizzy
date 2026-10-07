@@ -66,6 +66,7 @@ class PartSelection:
     clusters: int
     used_estimates: bool
     randomized: bool
+    error_guaranteed: bool
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ class _Plan:
     width: int | None = None
     used_estimates: bool = False
     exhausted: bool = False
+    error_guaranteed: bool = False
 
     @property
     def cost(self) -> int:
@@ -120,6 +122,7 @@ class _Plan:
             raise RuntimeError("deferred synthesis plan has no builder")
         plan = _priced_plan(self.builder(), self.width, self.clusters)
         plan.used_estimates = True
+        plan.error_guaranteed = self.error_guaranteed
         return plan
 
     def exhaust(self) -> "_Plan":
@@ -393,7 +396,9 @@ def select_part(
             fixed = exact.decompose(part, time, route=f"exact-{algorithm}", method=algorithm)
             # Both bounded exact candidates receive identical emission effort;
             # a cheap preliminary quote must not decide BDI versus Givens.
-            candidates.append(_priced_plan(fixed, width, len(clusters)).exhaust())
+            plan = _priced_plan(fixed, width, len(clusters)).exhaust()
+            plan.error_guaranteed = True
+            candidates.append(plan)
         except _EXACT_FAILURES:
             pass
 
@@ -448,6 +453,7 @@ def select_part(
     assert plan.emission is not None
     return PartSelection(
         plan.circuit, plan.emission, plan.clusters, used_estimates, selected_randomized,
+        plan.error_guaranteed,
     )
 
 
@@ -461,6 +467,7 @@ def _hybrid_plan(free, rest, time, error, calibration, steps):
     sequence is priced so cancellation and shared frames across steps count.
     """
     clusters = commuting_clusters(rest) + [free]
+    guaranteed = steps is None and calibration <= 1.0
     if steps is None:
         steps = trotter.steps_for_clusters(clusters, time, error, calibration)
     if steps is None:
@@ -471,7 +478,7 @@ def _hybrid_plan(free, rest, time, error, calibration, steps):
         free_step.extend(exact.decompose(piece, time / steps, route="exact-in-step"))
     width = n_qubits(rest) if terms_of(rest) else n_qubits(free)
     step_time = time / steps
-    return _repeated_plan(
+    plan = _repeated_plan(
         lambda repetitions: trotter.cluster_formula(
             clusters,
             step_time * repetitions,
@@ -482,6 +489,8 @@ def _hybrid_plan(free, rest, time, error, calibration, steps):
         width,
         len(clusters),
     )
+    plan.error_guaranteed = guaranteed
+    return plan
 
 
 def _formula_plan(part, commuting, time, error, calibration, steps):
@@ -538,7 +547,9 @@ def _formula_plan(part, commuting, time, error, calibration, steps):
                 repetitions,
                 compile_cluster=b,
             )
-        plans.append(_repeated_plan(build, count, n_qubits(part), len(clusters)))
+        plan = _repeated_plan(build, count, n_qubits(part), len(clusters))
+        plan.error_guaranteed = steps is None and calibration <= 1.0
+        plans.append(plan)
     if not plans:
         return None
     used_estimates = any(plan.used_estimates for plan in plans)
@@ -557,14 +568,14 @@ def _cluster_signature(clusters) -> tuple[tuple[str, ...], ...]:
 
 
 def _chain_plan(part, clusters, time, error, order, calibration):
-    """Price the requested-order formula sized by the chain bound.
+    """Price the requested-order formula; higher-order chain sizing is an estimate.
 
     The complete folded sequence is priced so the emission tier sees cancellation
     across steps and the actual terminal frame.
     """
     steps = trotter.steps_for(part, time, error, order, calibration)
     step_time = time / steps
-    return _repeated_plan(
+    plan = _repeated_plan(
         lambda repetitions: trotter.product_formula(
             part,
             step_time * repetitions,
@@ -576,3 +587,5 @@ def _chain_plan(part, clusters, time, error, order, calibration):
         n_qubits(part),
         clusters,
     )
+    plan.error_guaranteed = order == 1 and calibration <= 1.0
+    return plan

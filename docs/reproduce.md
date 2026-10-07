@@ -5,6 +5,7 @@ Use these commands from the repository root after [installation](getting_started
 ## Test the implementation
 
 ```bash
+python -m pip install -e '.[test]'
 python -m pytest -q
 ```
 

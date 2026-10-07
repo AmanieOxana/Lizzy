@@ -1,0 +1,6 @@
+include LICENSE
+recursive-include tests *.py
+recursive-include experiments *.py *.json *.md
+recursive-include docs *.py *.md *.png *.svg
+prune docs/_build
+global-exclude __pycache__ *.py[cod] .DS_Store

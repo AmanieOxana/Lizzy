@@ -25,7 +25,60 @@ from lizzy.synthesis.trotter import (
     product_formula_cost,
     steps_for_clusters,
 )
-from lizzy.synthesize import synthesize
+from lizzy.synthesize import Compiler, synthesize
+
+
+def test_compiler_rejects_invalid_policy_before_selecting_a_route() -> None:
+    """Exact/empty candidates must not conceal malformed user settings."""
+    for options, name in (
+        ({"steps": -1}, "steps"), ({"steps": 1.5}, "steps"),
+        ({"steps": True}, "steps"), ({"order": 3}, "order"),
+        ({"order": 2.0}, "order"), ({"error": 0}, "error"),
+        ({"error": float("nan")}, "error"),
+        ({"calibration": -1}, "calibration"),
+        ({"calibration": float("inf")}, "calibration"),
+    ):
+        with pytest.raises(ValueError, match=name):
+            Compiler(**options)
+
+
+def test_static_input_validation_precedes_exact_and_zero_time_shortcuts() -> None:
+    """Reject non-Hermitian/nonfinite input instead of silently taking its real part."""
+    with pytest.raises(ValueError, match="real"):
+        synthesize(hamiltonian({"X": 1 + 2j}), time=0, method="givens")
+    with pytest.raises(ValueError, match="finite"):
+        synthesize(hamiltonian({"X": float("inf")}), time=0)
+    with pytest.raises(ValueError, match="time"):
+        synthesize(hamiltonian({"X": 1}), time=float("nan"))
+    with pytest.raises(ValueError, match="width"):
+        synthesize(hamiltonian({}), time=0)
+
+
+def test_auto_supports_backward_evolution() -> None:
+    """Invalid signed step estimates must not abort an otherwise exact candidate."""
+    h = hamiltonian({"X": 1.0, "Z": 0.2})
+    result = synthesize(h, time=-0.7, error=1e-8)
+    assert np.linalg.norm(
+        evolution(h, -0.7) - circuit_matrix(result.circuit, 1), 2,
+    ) < 1e-8
+
+
+def test_formula_accuracy_metadata_survives_materialization(monkeypatch) -> None:
+    """Both estimated and bounded formulas keep their contract through deferred pricing."""
+    from lizzy.synthesis import _routing
+
+    monkeypatch.setattr(_routing, "_FULL_PRICE_ROTATIONS", 0)
+    h = model("heisenberg_all_to_all", 4, seed=0)
+    result = synthesize(h, time=0.01, error=1e-9, order=4)
+    assert result.routes == ["trotter"]
+    assert result.routing_estimated
+    assert not result.error_guaranteed
+    assert np.linalg.norm(
+        evolution(h, 0.01) - circuit_matrix(result.circuit, 4), 2,
+    ) < 1e-9
+    bounded = _routing._formula_plan(h, commuting_clusters(h), 0.01, 1e-9, 1.0, None)
+    assert bounded.circuit is None  # Force the deferred path for a certified plan too.
+    assert bounded.materialize().error_guaranteed
 
 
 def test_the_degenerate_hybrid_is_not_a_candidate() -> None:

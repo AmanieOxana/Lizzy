@@ -9,6 +9,17 @@ much smaller family of operators: the **dynamical Lie algebra (DLA)**.
 Lizzy asks whether that structure supports a useful way to construct the
 evolution, rather than treating every problem as an unrestricted unitary.
 
+## Install
+
+With Python 3.12 or newer and Git, run from the Lizzy repository directory:
+
+```bash
+python -m pip install -e .
+```
+
+This installs Lizzy in editable mode and automatically installs its required
+dependencies, including the pinned `kak-tools` fork.
+
 ## The idea
 
 ```mermaid
@@ -48,3 +59,8 @@ python -m sphinx -W --keep-going -b html docs docs/_build/html
 Open `docs/_build/html/index.html`. This builds a local site; it does not publish it.
 
 Named in honor of Elizabeth Meckes.
+
+## License
+
+Lizzy's own code is available under the [MIT License](LICENSE). Dependencies
+retain their own terms; upstream licensing for `kak-tools` remains to be clarified.

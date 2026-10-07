@@ -223,7 +223,8 @@ def test_auto_t_keeps_valid_fallback_and_distinguishes_unavailable_from_unsuppor
     fallback = synthesize(operator, 1.0, objective="t")
     assert fallback.t_selection.selected == "givens-reference"
     assert fallback.t_count == 1
-    assert fallback.t_selection.rejected_candidates[0][0] == "bdi-reference"
+    rejected = dict(fallback.t_selection.rejected_candidates)
+    assert "BDI candidate exceeded numerical budget" in rejected["bdi-reference"]
     np.testing.assert_allclose(fallback.emitted_circuit.get_unitary(), evolution(operator, 1.0),
                                atol=1e-12)
 

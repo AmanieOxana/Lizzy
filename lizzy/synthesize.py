@@ -5,6 +5,7 @@ assembly. Optional numerical, chemistry and emission SDKs remain lazily loaded.
 """
 
 from dataclasses import dataclass, field
+from math import isfinite
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,7 @@ from lizzy.synthesis._routing import (
 from lizzy.synthesis._routing import (
     TCountSelection as TCountSelection,
 )
+from lizzy.synthesis.trotter import _validate_order, _validate_real, _validate_steps
 
 if TYPE_CHECKING:
     from lizzy.synthesis.wei_norman import WeiNormanResult
@@ -50,8 +52,10 @@ class Result:
         randomized (bool): True if any part was sampled, in which case the requested
             error is not guaranteed for the returned circuit or channel.
         error_guaranteed (bool): Whether the selected deterministic route retains the
-            requested error-budget contract. Fixed-step, calibrated and qDRIFT
-            formulas are false; BDI/Givens exact routes remain true. Gaussian and
+            requested analytical error-budget contract, up to global phase and
+            floating-point arithmetic. Exact BDI/Givens and conservatively sized
+            first-order/cluster formulas retain it. Higher-order chain estimates,
+            fixed-step or relaxed-calibration formulas, and qDRIFT do not. Gaussian and
             Clifford+T results are false because numerical reconstruction is not
             a certified total error bound. This is not an absolute global-phase
             guarantee: the static orthogonal routes can change that phase.
@@ -149,6 +153,11 @@ class Compiler:
         numerical_options = self.numerical_options
         steps, randomized, calibration = self.steps, self.randomized, self.calibration
         order, seed = self.order, self.seed
+        _validate_real(self.error, "error", positive=True)
+        _validate_real(calibration, "calibration", positive=True)
+        _validate_order(order)
+        if steps is not None:
+            _validate_steps(steps)
         if method not in {"auto", "wei-norman", "givens", "bdi", "gaussian"}:
             raise ValueError("method must be 'auto', 'wei-norman', 'givens', 'bdi', or 'gaussian'")
         if objective not in {"cx", "t"}:
@@ -176,6 +185,20 @@ class Compiler:
 
     def compile(self, hamiltonian_: PauliStringLinear, time: float) -> Result:
         """Compile one evolution; see synthesize() for route/error contracts."""
+        _validate_real(time, "time")
+        if not isinstance(hamiltonian_, PauliStringLinear):
+            raise TypeError("hamiltonian must be a PauliStringLinear")
+        terms = terms_of(hamiltonian_)
+        if not terms:
+            raise ValueError("hamiltonian must contain a Pauli term specifying its width")
+        width = len(terms[0][1])
+        for coefficient, pauli in terms:
+            if not isfinite(coefficient.real) or not isfinite(coefficient.imag):
+                raise ValueError("Hamiltonian coefficients must be finite")
+            if coefficient.imag != 0:
+                raise ValueError("Hamiltonian coefficients must be real (Hermitian input)")
+            if len(pauli) != width or width < 1:
+                raise ValueError("Hamiltonian Pauli terms must have the same positive width")
         method, objective, error = self.method, self.objective, self.error
         order, seed = self.order, self.seed
         randomized, calibration, steps = self.randomized, self.calibration, self.steps
@@ -194,7 +217,6 @@ class Compiler:
                 emission=compiled.emission,
                 numerical=compiled,
             )
-        width = n_qubits(hamiltonian_)
         gaussian_circuit, gaussian_failure = None, None
         if method in {"auto", "gaussian"}:
             from lizzy.fermions import gaussian
@@ -300,6 +322,7 @@ class Compiler:
             result.clusters = max(result.clusters, selection.clusters)
             result.randomized |= selection.randomized
             result.routing_estimated |= selection.used_estimates
+            result.error_guaranteed &= selection.error_guaranteed
 
         # Parts commute, but their emitted Clifford frames need not compose additively.
         # Multiple parts therefore need one complete-circuit quote. A single selected
@@ -328,10 +351,7 @@ class Compiler:
                     result.randomized = False
                     selected_gaussian = True
         result.routes = sorted(set(result.circuit.provenance))
-        exact_only = set(result.routes).issubset({"exact-bdi", "exact-givens", "exact-gaussian"})
-        result.error_guaranteed = not selected_gaussian and not result.randomized and (
-            exact_only or (steps is None and calibration <= 1.0)
-        )
+        result.error_guaranteed &= not selected_gaussian and not result.randomized
         return result
 
     def _compile_t(self, result, parts, time, width, **options) -> Result:
@@ -365,8 +385,11 @@ def synthesize(
     r"""
     Synthesize :math:`e^{-itH}` for a Pauli Hamiltonian.
 
-    ``method='auto'`` compares BDI and Givens within the static router while
-    retaining its error contract. Exact choices are reported in ``routes``.
+    ``method='auto'`` compares BDI and Givens within the static router. Exact
+    choices are reported in ``routes``. Higher-order chain formulas use estimated
+    step counts and set ``error_guaranteed=False``; first-order and clustered
+    formulas retain their analytical bound when conservatively sized. Inspect
+    the selected result rather than assuming every route certifies ``error``.
     A genuine Jordan--Wigner quadratic input also receives an optional whole-input
     OpenFermion Gaussian candidate, including pairing. Above eight fermionic modes,
     an available Gaussian candidate is delegated directly before DLA work;
@@ -418,7 +441,7 @@ def synthesize(
       that does not grow with ``time``;
     * a hybrid, greedily taking an exactly-compilable subset out and carrying it as
       one more summand inside each step;
-    * a product formula -- either the requested order sized by the chain bound, or
+    * a product formula -- either the requested order sized by the chain estimate, or
       the second-order formula over commuting clusters sized by the collected
       cluster bound (route ``trotter2``).
 
@@ -437,12 +460,14 @@ def synthesize(
     Args:
         hamiltonian_ (PauliStringLinear): The Hamiltonian.
         time (float): Evolution time.
-        error (float): Total error budget, divided over the parts.
+        error (float): Positive finite target error, divided over the parts.
+            Whether the selected route certifies it is reported in ``error_guaranteed``.
         order (int): Product-formula order for whatever cannot be done exactly.
         seed (int, optional): Seed for the sampled branch.
         randomized (bool): Allow the sampled branch. See the warning above.
-        calibration (float): Divides the estimated step count. One keeps the bound; a
-            measured factor trades it for a smaller circuit.
+        calibration (float): Positive finite divisor for the step count. Values at
+            most one retain available analytical bounds, but cannot certify a
+            higher-order chain estimate.
         steps (int, optional): Fixed step count for the inexact branches, like the
             ``reps`` of a Qiskit ``PauliEvolutionGate``. Sizing, bounds and their cost
             are skipped entirely, and **no error statement is made**: the circuit is

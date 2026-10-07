@@ -22,7 +22,9 @@ from lizzy.synthesis.trotter import (
     commutator_sum,
     nested_commutator_sum,
     product_formula,
+    product_formula_cost,
     qdrift,
+    qdrift_cost,
     split_by_magnitude,
     steps_for,
     steps_for_clusters,
@@ -104,6 +106,63 @@ def test_cluster_formula_meets_the_budget_it_was_sized_for(name: str, n: int) ->
 
     circuit = cluster_formula(clusters, 1.0, steps)
     assert infidelity(evolution(h, 1.0), circuit_matrix(circuit, n)) < 1e-3
+
+
+def test_negative_time_preserves_step_counts_and_reverses_evolution() -> None:
+    """Sizing depends on |time| while emitted rotations retain its sign."""
+    h = hamiltonian({"X": 0.7, "Z": -0.4})
+    time, error = 0.8, 1e-3
+    clusters = commuting_clusters(h)
+    cluster_steps = steps_for_clusters(clusters, -time, error)
+    assert cluster_steps == steps_for_clusters(clusters, time, error)
+    chain_steps = steps_for(h, -time, error, order=4)
+    assert chain_steps == steps_for(h, time, error, order=4)
+
+    forward = cluster_formula(clusters, time, cluster_steps)
+    backward = cluster_formula(clusters, -time, cluster_steps)
+    assert np.allclose(
+        circuit_matrix(backward, 1), circuit_matrix(forward, 1).conj().T
+    )
+    target = evolution(h, -time)
+    assert np.linalg.norm(target - circuit_matrix(backward, 1), ord=2) <= error
+    fourth_order = product_formula(h, -time, chain_steps, order=4)
+    assert np.linalg.norm(target - circuit_matrix(fourth_order, 1), ord=2) <= error
+
+
+def test_explicit_formula_controls_reject_invalid_counts_and_orders() -> None:
+    """Invalid controls must fail instead of silently emitting an empty circuit."""
+    h = hamiltonian({"X": 1.0})
+    with pytest.raises(ValueError, match="steps"):
+        product_formula(h, 1.0, steps=-1)
+    with pytest.raises(ValueError, match="steps"):
+        cluster_formula([h], 1.0, steps=0)
+    with pytest.raises(ValueError, match="steps"):
+        product_formula(h, 1.0, steps=True)
+    with pytest.raises(ValueError, match="order"):
+        product_formula(h, 1.0, steps=1, order=3)
+    with pytest.raises(ValueError, match="order"):
+        steps_for(h, 1.0, 1e-3, order=2.0)
+
+    circuit = product_formula(h, -0.3, steps=np.int64(2), order=np.int64(2))
+    assert np.allclose(circuit_matrix(circuit, 1), evolution(h, -0.3))
+
+
+def test_sizing_controls_are_validated_before_exact_and_empty_shortcuts() -> None:
+    """Trivial inputs must not hide an invalid error budget or calibration."""
+    h = hamiltonian({"X": 1.0})
+    empty = hamiltonian({})
+    with pytest.raises(ValueError, match="error"):
+        steps_for(h, 1.0, error=0.0)
+    with pytest.raises(ValueError, match="calibration"):
+        steps_for_clusters([h], 1.0, 1e-3, calibration=float("nan"))
+    with pytest.raises(ValueError, match="calibration"):
+        product_formula_cost(empty, 1.0, 1e-3, calibration=-1.0)
+    with pytest.raises(ValueError, match="error"):
+        qdrift(empty, 1.0, error=-1.0)
+    with pytest.raises(ValueError, match="error"):
+        qdrift_cost(empty, 1.0, error=float("inf"))
+    with pytest.raises(ValueError, match="time"):
+        cluster_formula([h], float("nan"), steps=1)
 
 
 def test_split_by_magnitude_keeps_every_term() -> None:

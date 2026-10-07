@@ -4,13 +4,20 @@
 
 ## Install
 
-Use Python 3.12 or newer. From the repository root:
+Use Python 3.12 or newer and Git:
 
 ```bash
-python -m pip install \
-  "kak_tools @ git+https://github.com/QPauLie/kak-tools.git@3980728596a060a7db2cf5f541a4aaf9011a9b1d"
-python -m pip install -e '.[test]'
+git clone https://github.com/AmanieOxana/Lizzy.git
+cd Lizzy
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
+
+On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell instead.
+The last command installs Lizzy in editable mode and automatically fetches the
+tested `kak-tools` fork at its pinned Git commit; you do not need a separate
+checkout. An internet connection is required for the initial dependency installation.
 
 Optional extras: `ft` for Clifford+T, `gaussian` for OpenFermion quadratic
 synthesis, `chemistry` for molecular tensors (also includes OpenFermion), and

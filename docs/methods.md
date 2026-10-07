@@ -92,6 +92,11 @@ Counts assume unrestricted connectivity. In T mode, `error` budgets rotation
 approximation, not total simulation error. Gaussian and Wei–Norman numerical
 checks likewise are not certified error bounds.
 
+For static synthesis, inspect `error_guaranteed`: higher-order chain formulas
+use estimated step counts, unlike the conservatively sized first-order and
+cluster formulas. This flag describes the analytical construction, not a
+certificate for floating-point roundoff.
+
 Finally, general BDI and Givens may match the target evolution only **up to
 global phase**. That is enough for uncontrolled evolution, but controlled
 evolution needs a separate phase check.

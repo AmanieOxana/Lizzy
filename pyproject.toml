@@ -1,19 +1,27 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "lizzy"
 version = "0.1.0"
 description = "Structure-aware unitary synthesis with DLA-specialized exact routes"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
     "networkx>=3.0",
     "paulie>=0.2.3",
-    "kak_tools",
+    "kak_tools @ git+https://github.com/QPauLie/kak-tools.git@eeeca98c8b2451896b4649907401b8ffae61f77a",
 ]
+
+[project.urls]
+Repository = "https://github.com/AmanieOxana/Lizzy"
+Documentation = "https://github.com/AmanieOxana/Lizzy/tree/main/docs"
+Issues = "https://github.com/AmanieOxana/Lizzy/issues"
 
 [project.optional-dependencies]
 hamlib = ["h5py>=3.8", "openfermion>=1.5"]
@@ -33,7 +41,7 @@ test = ["pytest>=7.0"]
 docs = ["sphinx>=8,<10", "myst-parser>=5.1,<6"]
 
 [tool.setuptools.packages.find]
-include = ["lizzy*"]
+include = ["lizzy", "lizzy.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
