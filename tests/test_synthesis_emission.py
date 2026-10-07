@@ -7,10 +7,30 @@ import numpy as np
 import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
+from lizzy._routing import _formula_plan, _repeated_plan
 from lizzy.dense import circuit_matrix, evolution, infidelity
 from lizzy.emit import EmissionQuote
 from lizzy.hamiltonian import Circuit, hamiltonian, model, terms_of
-from lizzy.synthesize import _formula_plan, _repeated_plan, synthesize
+from lizzy.synthesize import Compiler, synthesize
+
+
+def test_compiler_reuse_has_independent_results_and_snapshots_options():
+    order = ["X", "Y", "Z"]
+    options = {"max_dimension": 3, "basis_order": order}
+    compiler = Compiler(method="wei-norman", numerical_options=options)
+    operator = hamiltonian({"X": 0.7, "Z": -0.2})
+    first = compiler.compile(operator, 0.3)
+    options["max_dimension"] = 1
+    order.clear()
+    first.circuit.rotations.clear()
+    second = compiler.compile(operator, -0.2)
+    assert second.circuit is not first.circuit
+    assert second.emitted_circuit is not first.emitted_circuit
+    np.testing.assert_allclose(
+        second.emitted_circuit.get_unitary(), evolution(operator, -0.2), atol=1e-8,
+    )
+    with pytest.raises(TypeError):
+        compiler.numerical_options["max_dimension"] = 1
 
 
 def test_result_is_quoted_once_more_as_a_complete_circuit(monkeypatch) -> None:
@@ -35,7 +55,7 @@ def test_result_is_quoted_once_more_as_a_complete_circuit(monkeypatch) -> None:
 
 
 def test_high_weight_fixed_depth_considers_independent_set(monkeypatch) -> None:
-    import lizzy.synthesize as synthesis_module
+    import lizzy._routing as synthesis_module
 
     h = hamiltonian(
         {
@@ -291,7 +311,7 @@ def test_public_shared_frame_improves_encoded_su2_with_retained_artifact():
 
 
 def test_auto_cx_gives_both_exact_algorithms_equal_emission_effort(monkeypatch):
-    import lizzy.synthesize as synthesis_module
+    import lizzy._routing as synthesis_module
 
     operator = hamiltonian({"XXX": 0.7, "XXY": -0.2, "IIZ": 0.4})
     calls = []

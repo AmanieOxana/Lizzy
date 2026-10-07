@@ -30,6 +30,7 @@ flags = ["flagsynth @ git+https://github.com/PennyLaneAI/flagsynth.git@f117326f7
 ft = ["pygridsynth>=2.0,<3"]
 plot = ["matplotlib>=3.7"]
 test = ["pytest>=7.0"]
+docs = ["sphinx>=8,<10", "myst-parser>=5.1,<6"]
 
 [tool.setuptools.packages.find]
 include = ["lizzy*"]

@@ -45,7 +45,8 @@ def test_opaque_artifact_does_not_claim_concrete_count() -> None:
 
 def test_native_portfolio_preserves_phase_order_and_caller_failure_policies(monkeypatch):
     import lizzy.synthesize as synthesis
-    from lizzy import driven_bench, emit, synthesis_bench, wei_norman
+    from experiments._validation import _emission
+    from lizzy import emit, wei_norman
 
     logical = _logical_pair()
     logical.add(get_pauli_string("II"), 0.37, "test")
@@ -70,8 +71,7 @@ def test_native_portfolio_preserves_phase_order_and_caller_failure_policies(monk
                 assert wei_norman._emit(logical, 2, "none") is None
                 for compile_candidate in (
                     lambda: wei_norman._emit(logical, 2, "native"),
-                    lambda: synthesis_bench._emission(logical, 2),
-                    lambda: driven_bench._quote(logical, 2, target),
+                    lambda: _emission(logical, 2),
                 ):
                     with pytest.raises(failure, match="optional frame failed"):
                         compile_candidate()

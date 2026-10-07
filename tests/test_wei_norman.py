@@ -178,10 +178,31 @@ def test_zero_duration_never_evaluates_a_driven_callback():
     assert np.array_equal(result.emitted_circuit.get_unitary(), np.eye(4))
 
 
-def test_basis_order_is_induced_on_each_component():
+def test_basis_order_is_prepared_once_per_component_across_pulses(monkeypatch):
+    from lizzy import driven, wei_norman
+
+    calls = {"closure": 0, "adjoints": 0}
+    real_closure, real_pairs = driven._closure, driven._adjoint_pairs
+
+    def counted_closure(*args):
+        calls["closure"] += 1
+        return real_closure(*args)
+
+    def counted_pairs(*args):
+        calls["adjoints"] += 1
+        return real_pairs(*args)
+
+    monkeypatch.setattr(driven, "_closure", counted_closure)
+    monkeypatch.setattr(wei_norman, "_closure", counted_closure)
+    monkeypatch.setattr(driven, "_adjoint_pairs", counted_pairs)
     drive = DrivenHamiltonian(["XI", "ZI", "IX", "IZ"], lambda t: [0.2, 0.3, 0.4, -0.1])
-    result = synthesize_wei_norman(drive, 0.1, basis_order=["ZI", "IZ", "YI", "IY", "XI", "IX"])
+    result = synthesize_wei_norman(drive, 0.1, breakpoints=[0.05],
+                                   basis_order=["ZI", "IZ", "YI", "IY", "XI", "IX"])
     assert result.component_bases == (("ZI", "YI", "XI"), ("IZ", "IY", "IX"))
+    assert len(result.segments) == 4
+    assert calls == {"closure": 2, "adjoints": 2}
+    target = expm(-0.1j * sum(c * pauli_matrix(w) for c, w in zip(drive.at(0), drive.paulis)))
+    assert np.linalg.norm(result.emitted_circuit.get_unitary() - target, 2) < 1e-9
     with pytest.raises(ValueError, match="full Pauli closure"):
         synthesize_wei_norman(drive, 0.1, basis_order=["XI"])
 

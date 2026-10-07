@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
-from lizzy.bench import calibrate
 from lizzy.classify import summands
 from lizzy.dense import (
     circuit_matrix,
@@ -48,7 +47,7 @@ def test_hybrid_mechanism_meets_the_budget() -> None:
     is cheaper and the router rightly prefers it, but the hybrid stays reachable
     for inputs the pair clustering declines, so its budget claim keeps its test.
     """
-    from lizzy.synthesize import _hybrid_plan
+    from lizzy._routing import _hybrid_plan
 
     n = 4
     h = model("heisenberg", n, seed=1)
@@ -62,7 +61,7 @@ def test_hybrid_mechanism_meets_the_budget() -> None:
 def test_hybrid_free_network_appears_once_per_step() -> None:
     """The free summand sits last in the symmetric step, so its two halves merge:
     one network per step, not two."""
-    from lizzy.synthesize import _hybrid_plan
+    from lizzy._routing import _hybrid_plan
 
     h = model("heisenberg", 4, seed=1)
     free, rest = free_part(h)
@@ -239,18 +238,6 @@ def test_sampling_stays_reachable_when_asked_for() -> None:
     assert not synthesize(h, time=1.0, error=1e-1, order=4, seed=0).randomized
 
 
-def test_oracle_search_handles_nonmonotone_error_and_rejects_an_unmet_cap() -> None:
-    """A capped search returns the actual first pass and never a failing endpoint."""
-    from lizzy.compare import _first_passing
-
-    assert _first_passing(lambda _steps: True) == 1
-    assert _first_passing(lambda steps: steps >= 17) == 17
-    assert _first_passing(lambda steps: steps == 64) == 64
-    assert _first_passing(lambda steps: steps == 3 or steps >= 8, high=8) == 3
-    with pytest.raises(ValueError, match="target not reached within the 64-step"):
-        _first_passing(lambda _steps: False)
-
-
 def test_cluster_route_is_cheaper_and_taken() -> None:
     """On a Heisenberg model a clustered second-order step beats the chain-bounded
     formula, and the router follows the arithmetic."""
@@ -265,18 +252,14 @@ def test_cluster_route_is_cheaper_and_taken() -> None:
     assert infidelity(evolution(h, 1.0), circuit_matrix(result.circuit, 5)) < 1e-3
 
 
-def test_calibration_shrinks_the_circuit_and_keeps_the_budget() -> None:
-    """A factor measured on one size still meets the budget at a larger one."""
-    factor = calibrate(model("heisenberg_all_to_all", 4, seed=1), 1.0, 1e-3, 4)
-    assert factor > 1.0
-
+def test_calibration_shrinks_the_circuit_without_claiming_a_bound() -> None:
+    """An explicitly relaxed formula budget must not retain its guarantee."""
     h = model("heisenberg_all_to_all", 5, seed=1)
     base = synthesize(h, time=1.0, error=1e-3, order=4)
-    tuned = synthesize(h, time=1.0, error=1e-3, order=4, calibration=factor)
+    tuned = synthesize(h, time=1.0, error=1e-3, order=4, calibration=4.0)
 
     assert tuned.two_qubit_gates < base.two_qubit_gates
     assert not tuned.error_guaranteed
-    assert infidelity(evolution(h, 1.0), circuit_matrix(tuned.circuit, 5)) < 1e-3
 
 
 def test_auto_synthesis_preserves_exact_multipart_evolution() -> None:

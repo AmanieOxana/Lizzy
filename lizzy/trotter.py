@@ -201,10 +201,8 @@ def cluster_error_constant(clusters: list, budget: int = 300_000) -> float | Non
     whole computation polynomial. The honest prefactors and the surviving cancellation
     are what the chain bound of :func:`nested_commutator_sum` gives away.
 
-    The constant depends only on the clusters, not on the time or the budget being
-    asked about, so it is cached: the calibration bisection and benchmark sweeps over
-    evolution times ask for the same constant many times over, and the walk is the
-    expensive part.
+    The constant depends only on the clusters, so it is cached across compilations
+    with different evolution times or error budgets; the walk is the expensive part.
 
     Args:
         clusters (list[PauliStringLinear]): The commuting clusters, in the order the
@@ -372,15 +370,13 @@ def steps_for(
     the commutator structure once instead of not at all.
 
     The formula-dependent prefactor is taken as one throughout, so **the result is an
-    estimate, not a certificate**. :mod:`lizzy.bench` checks the error actually
-    achieved against a dense reference wherever the qubit count allows.
+    estimate, not a certificate**. Independent dense-reference tests check the
+    achieved error wherever the qubit count allows.
 
     Because the bound sums over every chain with a triangle inequality and the true error
-    enjoys cancellation between them, the estimate overshoots -- on these models by 12x
-    to 54x against the fewest steps that in fact meet the budget. ``calibration`` divides
-    it by a measured factor. That factor is an observation on one instance, not a proof
-    about another, so a calibrated count is a measurement rather than a bound; see
-    :func:`lizzy.bench.calibrate`.
+    enjoys cancellation between them, the estimate can overshoot. ``calibration``
+    divides it by a measured factor. That factor is an observation on one instance,
+    not a proof about another, so a calibrated count is not a bound.
 
     Args:
         hamiltonian_ (PauliStringLinear): The Hamiltonian being Trotterized.

@@ -14,6 +14,7 @@ from lizzy.driven import (
     AlgebraTooLarge,
     DrivenHamiltonian,
     IntegrationFailure,
+    WeiNormanBasis,
     synthesize_driven,
 )
 
@@ -104,6 +105,40 @@ def test_identically_zero_controls_emit_identity():
     assert result.dimension == 3
     assert len(result.circuit) == 0
     assert result.chart_restarts == 0
+
+
+def test_prepared_basis_reuses_immutable_structure_not_integration_state(monkeypatch):
+    controls = ["X", "Z", "I"]
+    prepared = WeiNormanBasis(controls, basis_order=["Z", "Y", "X", "I"])
+    controls[0] = "Y"
+    assert prepared.controls == ("X", "Z", "I")
+    with pytest.raises(ValueError, match="WRITEABLE"):
+        prepared._pairs[0][0].setflags(write=True)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("prepared integration must not rebuild its algebra")
+
+    monkeypatch.setattr(driven, "_closure", forbidden)
+    monkeypatch.setattr(driven, "_adjoint_pairs", forbidden)
+    h = DrivenHamiltonian(prepared.controls, lambda t: [0.7, -0.2, 0.13])
+    options = {"prepared_basis": prepared, "max_step": 0.05}
+    with pytest.raises(IntegrationFailure, match="max_rhs_evaluations"):
+        synthesize_driven(h, (0, 0.25), max_rhs_evaluations=1, **options)
+    first = synthesize_driven(h, (0, 0.25), **options)
+    again = synthesize_driven(h, (0, 0.25), **options)
+    assert first.basis == again.basis == prepared.words
+    assert first.rhs_evaluations == again.rhs_evaluations
+    assert first.intervals == again.intervals
+    assert first.circuit is not again.circuit
+    generator = sum(c * pauli_matrix(w) for c, w in zip(h.at(0), h.paulis))
+    target = expm(-0.25j * generator)
+    assert np.linalg.norm(circuit_matrix(first.circuit, 1) - target, 2) < 1e-9
+    assert np.array_equal(circuit_matrix(first.circuit, 1), circuit_matrix(again.circuit, 1))
+    with pytest.raises(AlgebraTooLarge, match="max_dimension=3"):
+        synthesize_driven(h, (0, 0.25), max_dimension=3, **options)
+    with pytest.raises(ValueError, match="ordered Hamiltonian controls"):
+        synthesize_driven(DrivenHamiltonian(["Z", "X", "I"], h.coefficients),
+                          (0, 0.25), **options)
 
 
 def test_full_su4_jacobian_matches_paper_prefix_conjugation():

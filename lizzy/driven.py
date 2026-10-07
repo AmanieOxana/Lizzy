@@ -28,6 +28,17 @@ def _real_vector(values, size: int) -> np.ndarray:
     return values.real.copy()
 
 
+def _pauli_words(paulis: Sequence[str | PauliString]) -> tuple[str, ...]:
+    words = tuple(str(p) for p in paulis)
+    if not words or any(not w or set(w) - set("IXYZ") for w in words):
+        raise ValueError("supply nonempty Pauli words using only I, X, Y, Z")
+    if len({len(w) for w in words}) != 1:
+        raise ValueError("all Pauli words must have the same width")
+    if len(set(words)) != len(words):
+        raise ValueError("Pauli words must be distinct; combine duplicate controls")
+    return words
+
+
 @dataclass(frozen=True)
 class DrivenHamiltonian:
     """Fixed, distinct Pauli words with real coefficients ``coefficients(t)``.
@@ -43,13 +54,7 @@ class DrivenHamiltonian:
     coefficients: Callable[[float], Sequence[float]]
 
     def __post_init__(self) -> None:
-        words = tuple(str(p) for p in self.paulis)
-        if not words or any(not w or set(w) - set("IXYZ") for w in words):
-            raise ValueError("supply nonempty Pauli words using only I, X, Y, Z")
-        if len({len(w) for w in words}) != 1:
-            raise ValueError("all Pauli words must have the same width")
-        if len(set(words)) != len(words):
-            raise ValueError("Pauli words must be distinct; combine duplicate controls")
+        words = _pauli_words(self.paulis)
         if not callable(self.coefficients):
             raise TypeError("coefficients must be a callable of absolute time")
         # Keep immutable words, not mutable user-owned PauLie objects.
@@ -152,12 +157,14 @@ def _adjoint_pairs(basis: Sequence[PauliString]) -> list[tuple[np.ndarray, ...]]
     return pairs
 
 
-def _coordinate_matrix(theta: np.ndarray, pairs: list) -> np.ndarray:
+def _coordinate_matrix(
+    theta: np.ndarray, pairs: Sequence[tuple[np.ndarray, ...]],
+) -> np.ndarray:
     """Real Jacobian M for U = product_j exp(-i theta_j P_j), M theta_dot = h.
 
     Column j expands prefix_j P_j prefix_j^dagger in the Hermitian Pauli
     basis. Differentiating U and cancelling -i in U_dot = -i H U gives this
-    convention directly; M(0) = I. See docs/wei_norman_review.md for the
+    convention directly; M(0) = I. See docs/methods.md for the
     correspondence with the paper's differently normalized coefficients.
     """
     prefix = np.eye(len(theta))
@@ -175,6 +182,70 @@ def _coordinate_matrix(theta: np.ndarray, pairs: list) -> np.ndarray:
     return matrix
 
 
+@dataclass(frozen=True, init=False)
+class WeiNormanBasis:
+    """Reusable ordered Pauli closure and adjoint planes, without solver state.
+
+    Construct from all declared controls, never sampled coefficient values.
+    ``basis_order`` may permute the complete closure. The frozen payload owns
+    immutable words and bytes-backed arrays; numerical charts, controls and work
+    counters belong to each integration, not to this reusable preparation.
+    """
+
+    controls: tuple[str, ...]
+    words: tuple[str, ...]
+    _pairs: tuple[tuple[np.ndarray, ...], ...] = field(repr=False, compare=False)
+    _positions: np.ndarray = field(repr=False, compare=False)
+    _noncentral: np.ndarray = field(repr=False, compare=False)
+
+    def __init__(
+        self, paulis: Sequence[str | PauliString], *, max_dimension: int = 32,
+        basis_order: Sequence[str] | None = None,
+    ) -> None:
+        controls = _pauli_words(paulis)
+        limit = _positive_integer(max_dimension, "max_dimension")
+        words = tuple(str(p) for p in _closure(controls, limit))
+        if basis_order is not None:
+            order = tuple(str(p) for p in basis_order)
+            if len(order) != len(words) or set(order) != set(words):
+                raise ValueError("basis_order must be a permutation of the full Pauli closure")
+            words = order
+        self._initialize(controls, words)
+
+    @classmethod
+    def _from_closure(cls, controls: tuple[str, ...], words: tuple[str, ...]):
+        """Use the wrapper's already budget-checked and ordered component closure."""
+        prepared = object.__new__(cls)
+        prepared._initialize(controls, words)
+        return prepared
+
+    def _initialize(self, controls: tuple[str, ...], words: tuple[str, ...]) -> None:
+        def immutable(array):
+            # A merely write-protected owning ndarray can be made writable again.
+            return np.frombuffer(array.tobytes(), dtype=array.dtype)
+
+        pairs = tuple(tuple(immutable(array) for array in pair)
+                      for pair in _adjoint_pairs([get_pauli_string(w) for w in words]))
+        object.__setattr__(self, "controls", controls)
+        object.__setattr__(self, "words", words)
+        object.__setattr__(self, "_pairs", pairs)
+        object.__setattr__(self, "_positions", immutable(
+            np.array([words.index(word) for word in controls], dtype=int)))
+        object.__setattr__(self, "_noncentral", immutable(
+            np.array([bool(len(first)) for first, _, _ in pairs])))
+
+    @property
+    def dimension(self) -> int:
+        return len(self.words)
+
+    def jacobian(self, angles: Sequence[float]) -> np.ndarray:
+        """Wei–Norman coordinate matrix in this preparation's fixed basis order."""
+        theta = np.asarray(angles, dtype=float)
+        if theta.shape != (self.dimension,):
+            raise ValueError(f"angles must have shape ({self.dimension},)")
+        return _coordinate_matrix(theta, self._pairs)
+
+
 class _ChartLimit(Exception):
     pass
 
@@ -185,6 +256,7 @@ def synthesize_driven(
     *,
     max_dimension: int = 32,
     basis_order: Sequence[str] | None = None,
+    prepared_basis: WeiNormanBasis | None = None,
     rtol: float = 1e-9,
     atol: float = 1e-11,
     max_step: float = np.inf,
@@ -198,6 +270,9 @@ def synthesize_driven(
     This is an explicit numerical route, not automatic cost-based routing.
     All declared controls generate the closure; no coefficients are sampled to
     decide structural eligibility. ``basis_order`` may permute the entire closure.
+    ``prepared_basis`` reuses that structural work for the same ordered controls;
+    its dimension must fit ``max_dimension`` and any ``basis_order`` must match it.
+    Every invocation still starts with fresh coordinates and work counters.
 
     By default, try one compact product for the full interval. A trial interval
     is bisected when sampled coordinates/Jacobians become nonfinite or the
@@ -224,17 +299,21 @@ def synthesize_driven(
     _validate_chart_controls(rtol=rtol, atol=atol, max_step=max_step,
                              chart_radius=chart_radius, condition_limit=condition_limit)
 
-    basis = _closure(hamiltonian.paulis, max_dimension)
-    if basis_order is not None:
-        order = tuple(str(p) for p in basis_order)
-        if len(order) != len(basis) or set(order) != {str(p) for p in basis}:
-            raise ValueError("basis_order must be a permutation of the full Pauli closure")
-        by_word = {str(p): p for p in basis}
-        basis = [by_word[w] for w in order]
-    words = tuple(str(p) for p in basis)
-    positions = [words.index(w) for w in hamiltonian.paulis]
-    pairs = _adjoint_pairs(basis)
-    noncentral = np.array([len(first) > 0 for first, _, _ in pairs])
+    if prepared_basis is None:
+        prepared_basis = WeiNormanBasis(
+            hamiltonian.paulis, max_dimension=max_dimension, basis_order=basis_order,
+        )
+    elif not isinstance(prepared_basis, WeiNormanBasis):
+        raise TypeError("prepared_basis must be a WeiNormanBasis or None")
+    else:
+        if prepared_basis.controls != tuple(hamiltonian.paulis):
+            raise ValueError("prepared_basis must match the ordered Hamiltonian controls")
+        if prepared_basis.dimension > max_dimension:
+            raise AlgebraTooLarge(f"Pauli closure exceeds max_dimension={max_dimension}")
+        if basis_order is not None and tuple(map(str, basis_order)) != prepared_basis.words:
+            raise ValueError("basis_order must match prepared_basis")
+    words = prepared_basis.words
+    basis = [get_pauli_string(word) for word in words]
     evaluations, rejected, peak_condition = 0, 0, 1.0
 
     def check_chart(theta):
@@ -242,9 +321,9 @@ def synthesize_driven(
         if not np.all(np.isfinite(theta)):
             raise _ChartLimit("nonfinite coordinates")
         # Central generators (including identity) never change the Jacobian.
-        if chart_radius is not None and np.sum(np.abs(theta[noncentral])) > chart_radius:
+        if chart_radius is not None and np.sum(np.abs(theta[prepared_basis._noncentral])) > chart_radius:
             raise _ChartLimit("chart_radius exceeded")
-        matrix = _coordinate_matrix(theta, pairs)
+        matrix = prepared_basis.jacobian(theta)
         if not np.all(np.isfinite(matrix)):
             raise _ChartLimit("nonfinite coordinate Jacobian")
         try:
@@ -262,7 +341,7 @@ def synthesize_driven(
             raise IntegrationFailure("max_rhs_evaluations exhausted")
         evaluations += 1
         coefficients = np.zeros(len(basis))
-        coefficients[positions] = hamiltonian.at(time)
+        coefficients[prepared_basis._positions] = hamiltonian.at(time)
         matrix = check_chart(theta)
         try:
             derivative = np.linalg.solve(matrix, coefficients)

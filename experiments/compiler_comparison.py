@@ -291,7 +291,7 @@ def main():
         flag_source = None
     report = {"measured_at": datetime.now(UTC).isoformat(), "complete": False,
               "revision": "shared-frame-no-regression-automatic-exact-selection",
-              "previous_record": "experiments/compiler_comparison_before_shared_frames.json",
+              "previous_record": "https://github.com/AmanieOxana/Lizzy/blob/f021a9a0f2a8c8f3f97674ae96fb0d8729496830/experiments/compiler_comparison_before_shared_frames.json",
               "baseline_variants": {"flagsynth-sdm": "locally patched upstream SDM"},
               "seed": SEED, "epsilons": epsilons, "methods": methods,
               "protocol": "experiments/compiler_comparison_protocol.md",
@@ -305,7 +305,7 @@ def main():
     sources = ("experiments/compiler_comparison.py", "experiments/compiler_comparison_protocol.md",
                "experiments/_compiler_adapters.py", "experiments/_flagsynth_adapter.py",
                "experiments/_bqskit_adapter.py", "experiments/_product_formula_adapter.py",
-               "lizzy/synthesize.py", "lizzy/gaussian.py", "lizzy/clifford_t.py", "lizzy/exact.py", "lizzy/native.py", "lizzy/wei_norman.py",
+               "lizzy/synthesize.py", "lizzy/_routing.py", "lizzy/gaussian.py", "lizzy/clifford_t.py", "lizzy/exact.py", "lizzy/native.py", "lizzy/wei_norman.py",
                "lizzy/driven.py", "lizzy/_orthogonal_mapping.py", "lizzy/dense.py", "lizzy/emit.py")
     report["source_sha256"] = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                                for name in sources}

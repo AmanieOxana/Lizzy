@@ -30,7 +30,8 @@ from lizzy.hamiltonian import (
     terms_of,
 )
 from lizzy.native import ladder_circuit, native_frame_circuit
-from lizzy.synthesis_bench import _errors, _versions
+
+from ._validation import _errors, _versions
 
 SEED = 20261007
 METHODS = ("givens", "bdi")

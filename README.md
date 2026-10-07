@@ -32,6 +32,15 @@ Current results show savings on selected structured targets, not a universal
 advantage or a chemistry-wide improvement.
 
 [Get started](docs/getting_started.md) · [Results](docs/compiler_comparison.md) ·
-[How synthesis works](docs/synthesis.md)
+[Methods and limits](docs/methods.md)
+
+Build the Sphinx documentation locally:
+
+```bash
+python -m pip install -e '.[docs]'
+python -m sphinx -W --keep-going -b html docs docs/_build/html
+```
+
+Open `docs/_build/html/index.html`. This builds a local site; it does not publish it.
 
 Named in honor of Elizabeth Meckes.

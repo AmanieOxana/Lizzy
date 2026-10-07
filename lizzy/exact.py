@@ -11,7 +11,7 @@ formula. Its internal splitting error disappears, but cross-layer error remains.
 """
 
 from collections.abc import Iterator
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from functools import lru_cache
 
 import numpy as np
@@ -227,7 +227,6 @@ class BDIPlan:
     _wing: tuple[tuple[str, float], ...] = field(default=(), repr=False)
     _cartan: tuple[tuple[str, float], ...] = field(default=(), repr=False)
     optimization: BDIOptimization | None = None
-    _reference_frame: tuple[tuple[float, ...], ...] = field(default=(), repr=False)
 
     @property
     def phase_preserving(self) -> bool:
@@ -359,46 +358,6 @@ def _validated_bdi_gauge_wings(k, central, generator, p, planes):
         yield index, wing
 
 
-def bdi_gauge_candidates(plan: BDIPlan) -> tuple[tuple[str, BDIPlan], ...]:
-    """Expose bounded legal gauge alternatives without choosing a cost objective.
-
-    The supplied immutable plan is always first, labelled ``reference``. For
-    horizontal plans, enumerate the same at-most-eight structural-nullspace
-    completions used by ``optimize='t'``, starting from the stored SVD frame.
-    Exactly duplicate wings are omitted; no candidate is discarded by a cost
-    estimate. Balanced, almost-balanced and general endpoint plans have no such
-    search here and return only the reference.
-
-    Every alternative retains the paper's mapping, recursive BDI plane order,
-    Cartan rates and parameter bound. Its physical inverse wing is still emitted
-    by :meth:`BDIPlan.circuit`. Cost selection belongs to the caller after joining
-    complete circuits and compiling them at a common total error budget. This is
-    a bounded proposal set, not an enumeration of all possible BDI gauges.
-    """
-    if not isinstance(plan, BDIPlan):
-        raise TypeError("Expected a BDIPlan for gauge enumeration")
-    candidates = [("reference", plan)]
-    p, q = plan.partition
-    if not plan.phase_preserving or abs(p - q) < 2 or not plan._reference_frame:
-        return tuple(candidates)
-
-    planes = {(i, j): (word, scale) for i, j, word, scale in plan._planes}
-    inverse = {word: (i, j, scale) for (i, j), (word, scale) in planes.items()}
-    central = np.zeros((plan.irrep_size, plan.irrep_size))
-    for word, rate in plan._cartan:
-        i, j, scale = inverse[word]
-        central[i, j], central[j, i] = rate * scale, -rate * scale
-    seen = {plan._wing}
-    for index, wing in _validated_bdi_gauge_wings(
-        np.asarray(plan._reference_frame), central, np.asarray(plan._generator), p, planes,
-    ):
-        if wing in seen:
-            continue
-        seen.add(wing)
-        candidates.append((f"nullspace-{index}", replace(plan, _wing=wing, optimization=None)))
-    return tuple(candidates)
-
-
 def _optimize_bdi_wing(
     k: np.ndarray, central: np.ndarray, generator: np.ndarray, p: int,
     planes: dict, baseline: tuple[tuple[str, float], ...], rotation_error: float,
@@ -495,7 +454,6 @@ def _prepare_bdi(
         _wing=wing,
         _cartan=tuple(cartan),
         optimization=optimization,
-        _reference_frame=tuple(tuple(row) for row in k),
     )
 
 

@@ -21,6 +21,7 @@ from lizzy.driven import (
     DrivenHamiltonian,
     DrivenResult,
     IntegrationFailure,
+    WeiNormanBasis,
     _closure,
     synthesize_driven,
 )
@@ -229,6 +230,10 @@ def synthesize_wei_norman(
         if len(order) != len(known) or set(order) != known:
             raise ValueError("basis_order must be a permutation of the full Pauli closure")
         bases = [tuple(word for word in order if word in basis) for basis in bases]
+    prepared_bases = [
+        WeiNormanBasis._from_closure(tuple(drive.paulis[j] for j in group), basis)
+        for group, basis in zip(groups, bases)
+    ]
 
     # This structural decision is independent of pulse boundaries and controls.
     direct_groups = []
@@ -252,7 +257,7 @@ def synthesize_wei_norman(
         interior_low, interior_high = np.nextafter(lower, upper), np.nextafter(upper, lower)
         if len(pieces) > 1 and interior_low > interior_high:
             raise IntegrationFailure("pulse interval has no representable interior time")
-        for group, basis, direct in zip(groups, bases, direct_groups):
+        for group, prepared, direct in zip(groups, prepared_bases, direct_groups):
             if charts >= max_segments:
                 raise IntegrationFailure("max_segments exhausted across components/pulses")
             words = tuple(drive.paulis[j] for j in group)
@@ -264,12 +269,12 @@ def synthesize_wei_norman(
                 return drive.at(sample)[indices]
 
             if direct:
-                part = _static_segment(words, basis, static_values[indices], start, end)
+                part = _static_segment(words, prepared.words, static_values[indices], start, end)
             else:
                 if evaluations >= max_rhs_evaluations:
                     raise IntegrationFailure("max_rhs_evaluations exhausted across components/pulses")
                 part = synthesize_driven(
-                    DrivenHamiltonian(words, coefficients), (start, end), basis_order=basis,
+                    DrivenHamiltonian(words, coefficients), (start, end), prepared_basis=prepared,
                     max_segments=max_segments - charts,
                     max_rhs_evaluations=max_rhs_evaluations - evaluations, **options,
                 )

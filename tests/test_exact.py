@@ -183,52 +183,6 @@ def test_t_aware_bdi_reduces_wing_cost_without_changing_paper_recursion(monkeypa
     assert exact.prepare_bdi(operator) is reference
 
 
-def test_bdi_gauge_portfolio_retains_distinct_physical_alternatives_without_cost_pruning(monkeypatch):
-    operator = hamiltonian({"XI": 0.2, "YI": -0.31, "ZX": 0.47, "ZY": 0.63, "ZZ": 0.89})
-    reference = exact.prepare_bdi(operator)
-    original_wing = reference._wing
-    candidates = exact.bdi_gauge_candidates(reference)
-    assert candidates[0] == ("reference", reference)
-    assert candidates[0][1] is reference
-    assert 1 < len(candidates) <= 9
-    assert len({name for name, _ in candidates}) == len(candidates)
-    assert len({plan._wing for _, plan in candidates}) == len(candidates)
-    for _, plan in candidates:
-        assert plan.phase_preserving and plan.optimization is None
-        assert plan._cartan == reference._cartan
-        assert plan.parameter_bound == reference.parameter_bound
-        assert len(plan._wing) == len(reference._wing)
-        for time in (-2.7, 0.61, 17.2):
-            circuit = plan.circuit(time)
-            wing_size = len(plan._wing)
-            inverse = [(str(word), angle) for word, angle in circuit.rotations[:wing_size]]
-            assert inverse == [(word, -angle) for word, angle in reversed(plan._wing)]
-            np.testing.assert_allclose(
-                circuit_matrix(circuit, 2), evolution(operator, time), atol=2e-11,
-            )
-    assert exact.bdi_gauge_candidates(reference) == candidates
-    assert reference._wing == original_wing
-
-    # Duplicate legal completions, including the original frame, are not charged
-    # as distinct proposals. Enumeration does not mutate the cached reference.
-    monkeypatch.setattr(exact, "_bdi_nullspace_candidates", lambda k, p: iter((k, k)))
-    assert exact.bdi_gauge_candidates(reference) == (("reference", reference),)
-
-
-def test_bdi_gauge_portfolio_leaves_balanced_and_general_reference_plans_unchanged():
-    words = ["".join(word) for word in product("IXYZ", repeat=2) if word != ("I", "I")]
-    controls = (
-        exact.prepare_bdi(hamiltonian({"X": 0.71})),
-        exact.prepare_bdi(hamiltonian({"XXX": 0.31, "XXY": -0.72})),
-        exact.prepare_bdi(hamiltonian({word: (index + 1) / 29 for index, word in enumerate(words)})),
-    )
-    assert controls[0].partition == (1, 1)
-    assert abs(controls[1].partition[0] - controls[1].partition[1]) == 1
-    assert controls[2].mapping_kind == "general-graph"
-    for plan in controls:
-        assert exact.bdi_gauge_candidates(plan) == (("reference", plan),)
-
-
 @pytest.mark.parametrize("partition", [(2, 5), (5, 2)])
 def test_bdi_gauge_completion_handles_both_orientations_and_rank_deficiency(partition):
     p, q = partition
@@ -364,7 +318,7 @@ def test_explicit_exact_method_compiles_all_summands_without_auto_routing(monkey
         pytest.fail("an explicit exact method must not compete with product formulas")
 
     monkeypatch.setattr(exact, "decompose", trace_decompose)
-    monkeypatch.setattr(synthesis, "_synthesize_part", no_auto_routing)
+    monkeypatch.setattr(synthesis, "select_part", no_auto_routing)
     result = synthesize(operator, -0.73, method=method)
     assert result.summands == len(dispatched) == 2
     assert dispatched == [(f"exact-{method}", method)] * 2

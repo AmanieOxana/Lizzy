@@ -15,17 +15,18 @@ from scipy.linalg import expm
 
 from lizzy.dense import circuit_matrix, pauli_matrix
 from lizzy.driven import AlgebraTooLarge, DrivenHamiltonian, IntegrationFailure
-from lizzy.driven_bench import _dense_reference
 from lizzy.hamiltonian import hamiltonian
-from lizzy.synthesis_bench import (
+from lizzy.wei_norman import synthesize_wei_norman
+
+from ._validation import (
     BenchmarkCase,
+    _dense_reference,
     _emission,
     _errors,
     _static_case,
     _versions,
     benchmark_cases,
 )
-from lizzy.wei_norman import synthesize_wei_norman
 
 MODES = ("resolved-step", "adaptive-default-step")
 

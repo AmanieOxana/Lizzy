@@ -8,16 +8,16 @@ The expanded run retains the targets, times, tolerances and existing methods'
 settings. It adds the public automatic exact selector, BQSKit and a separate
 Hamiltonian-aware product-formula track with the bounded policies declared below.
 The repaired six-method measurements are preserved in
-[compiler_comparison_separate_methods.json](compiler_comparison_separate_methods.json).
+[compiler_comparison_separate_methods.json](https://github.com/AmanieOxana/Lizzy/blob/f021a9a0f2a8c8f3f97674ae96fb0d8729496830/experiments/compiler_comparison_separate_methods.json).
 The original pre-repair measurements are preserved in
-[compiler_comparison_before_fixes.json](compiler_comparison_before_fixes.json).
+[compiler_comparison_before_fixes.json](https://github.com/AmanieOxana/Lizzy/blob/f021a9a0f2a8c8f3f97674ae96fb0d8729496830/experiments/compiler_comparison_before_fixes.json).
 This is a disclosed post-diagnosis repair, not a retrospectively successful
 unmodified-upstream run.
 
 The shared-frame refresh changes only Lizzy's public automatic selector after
 the joint T/CX ablation; it is a disclosed implementation update, not a new
 preregistered comparison. Its previous complete 216-row record is preserved in
-[compiler_comparison_before_shared_frames.json](compiler_comparison_before_shared_frames.json).
+[compiler_comparison_before_shared_frames.json](https://github.com/AmanieOxana/Lizzy/blob/f021a9a0f2a8c8f3f97674ae96fb0d8729496830/experiments/compiler_comparison_before_shared_frames.json).
 Only the 24 auto rows (12 targets, two tolerances) are remeasured. The other
 192 external and diagnostic rows retain their measurements, settings and
 per-run provenance. The merged report identifies each row's measurement run.
