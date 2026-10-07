@@ -32,7 +32,7 @@ Current results show savings on selected structured targets, not a universal
 advantage or a chemistry-wide improvement.
 
 [Get started](docs/getting_started.md) · [Results](docs/compiler_comparison.md) ·
-[Methods and limits](docs/methods.md)
+[Methods](docs/methods.md)
 
 The [package layout](docs/getting_started.md#development) separates algebra,
 synthesis, emission and fermionic adapters. The main `Compiler`/`synthesize`

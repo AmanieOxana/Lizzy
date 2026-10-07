@@ -77,7 +77,7 @@ def test_compiler_overview_retains_all_targets_and_accessible_formats():
         assert raster.read(8) == b"\x89PNG\r\n\x1a\n"
 
 
-def test_sphinx_builds_math_and_public_api_without_warnings(tmp_path):
+def test_sphinx_builds_pages_math_and_downloads_without_warnings(tmp_path):
     application = pytest.importorskip("sphinx.application")
     pytest.importorskip("myst_parser")
     warnings = io.StringIO()
@@ -93,10 +93,10 @@ def test_sphinx_builds_math_and_public_api_without_warnings(tmp_path):
         assert (tmp_path / "html" / f"{name}.html").is_file()
     methods = (tmp_path / "html" / "methods.html").read_text()
     assert 'class="math notranslate' in methods
-    assert 'id="lizzy.synthesize.Compiler"' in methods
-    assert 'id="lizzy.synthesis.driven.WeiNormanBasis"' in methods
-    for name in ("compiler_comparison_results.json", "compiler_comparison_protocol.md",
-                 "bdi_paper_results.json"):
+    # Keep existing deep links usable as the reader-facing explanation changes.
+    assert 'id="cartan-bdi-and-givens"' in methods
+    assert 'id="weinorman"' in methods
+    for name in ("compiler_comparison_results.json", "compiler_comparison_protocol.md"):
         downloads = list((tmp_path / "html" / "_downloads").rglob(name))
         assert len(downloads) == 1
         assert downloads[0].read_bytes() == (ROOT / "experiments" / name).read_bytes()

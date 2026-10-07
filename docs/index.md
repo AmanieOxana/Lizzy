@@ -11,7 +11,7 @@ not a guarantee of fewer gates.
 getting_started
 methods
 compiler_comparison
-Reproduce results <reproduce>
+reproduce
 ```
 
 The [repository](https://github.com/AmanieOxana/Lizzy) contains the source and

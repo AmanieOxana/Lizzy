@@ -30,5 +30,5 @@ FlagSynth's SDM result includes disclosed local repairs. Different accuracy
 settings can change the ranking.
 
 [Measurements and reproduction](reproduce.md#compiler-comparison) ·
-[Methods and limits](methods.md) ·
+[Methods](methods.md) ·
 [Overview](index.md)

@@ -1,6 +1,6 @@
 # Getting started
 
-[Overview](index.md) · [Methods and limits](methods.md) · [Results](compiler_comparison.md)
+[Overview](index.md) · [Methods](methods.md) · [Results](compiler_comparison.md)
 
 ## Install
 
@@ -52,7 +52,7 @@ long = compiler.compile(H, time=1.0)
 With `ft`, add `objective="t"` to compare actual T/T† counts at a common
 rotation budget. This requires a supported exact route and has no Trotter
 fallback. The rotation budget is not a total simulation-error certificate.
-See [accuracy and phase contracts](methods.md).
+See [what the gate counts promise](methods.md#what-the-gate-counts-promise).
 
 ## Driven evolution
 
@@ -73,7 +73,7 @@ Declare all potentially active controls and supply known pulse boundaries.
 Local ODE tolerances do not certify final unitary error.
 For orbital tensors use `lizzy.fermions.chemistry.synthesize_molecular_ffsim`;
 for direct OpenFermion quadratic input use `lizzy.fermions.gaussian.from_quadratic`.
-[The methods note](methods.md) explains their distinct contracts.
+[Methods](methods.md) explains when each construction is useful.
 
 ## Development
 
@@ -96,7 +96,5 @@ specialist imports use the subpackages, as in `lizzy.synthesis.driven` and
 `lizzy.emission.native` above; the old flat paths are not compatibility aliases.
 Persisted pickles naming moved specialist classes also require migration.
 
-Run `python -m pytest -q`. Optional integrations skip when dependencies are
-absent; tests do not download data. [Reproduce results](reproduce.md)
-contains the three active validation commands. Regenerate the current figure
-with `python docs/figures/generate.py` (requires `plot`).
+See [Run the checks](reproduce.md) for tests, compiler comparisons and figure
+generation.
