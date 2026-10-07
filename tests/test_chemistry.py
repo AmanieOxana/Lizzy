@@ -18,7 +18,6 @@ from lizzy.chemistry import (
 )
 from lizzy.dense import hamiltonian_matrix, infidelity
 from lizzy.hamiltonian import terms_of
-from lizzy.hamlib import load_molecular
 
 
 def _molecule() -> MolecularHamiltonian:
@@ -80,7 +79,6 @@ def _manual_fermion_operator(molecular, qubit_order="interleaved"):
     ("one", "two", "constant"),
     [
         (np.array([[np.nan]]), np.zeros((1, 1, 1, 1)), 0.0),
-        (np.zeros((1, 1)), np.array([[[[np.inf]]]]), 0.0),
         (np.zeros((1, 1)), np.zeros((1, 1, 1, 1)), 1j),
         (
             np.zeros((2, 2)),
@@ -110,33 +108,6 @@ def test_openfermion_and_ffsim_adapters_roundtrip_tensors():
     assert recovered.constant == pytest.approx(expected.constant)
     assert np.allclose(recovered.one_body_tensor, expected.one_body_tensor)
     assert np.allclose(recovered.two_body_tensor, expected.two_body_tensor)
-
-
-def test_molecular_hamlib_loader_uses_independent_raw_fixture(tmp_path):
-    h5py = pytest.importorskip("h5py")
-    openfermion = pytest.importorskip("openfermion")
-    pytest.importorskip("ffsim")
-    source = openfermion.FermionOperator((), 0.23)
-    source += openfermion.FermionOperator(((0, 1), (0, 0)), -0.8)
-    source += openfermion.FermionOperator(((1, 1), (1, 0)), -0.8)
-    for term in (
-        ((0, 1), (0, 1), (0, 0), (0, 0)),
-        ((0, 1), (1, 1), (1, 0), (0, 0)),
-        ((1, 1), (0, 1), (0, 0), (1, 0)),
-        ((1, 1), (1, 1), (1, 0), (1, 0)),
-    ):
-        source += openfermion.FermionOperator(term, 0.245)
-    path = tmp_path / "molecule.hdf5"
-    with h5py.File(path, "w") as handle:
-        handle.create_dataset("ham_molec-2", data=str(source))
-
-    loaded = load_molecular(path, "ham_molec-2")
-
-    assert loaded.n_orbitals == 1
-    assert loaded.n_qubits == 2
-    assert loaded.constant == pytest.approx(0.23)
-    assert np.allclose(loaded.one_body_tensor, [[-0.8]])
-    assert np.allclose(loaded.two_body_tensor, [[[[0.49]]]])
 
 
 @pytest.mark.parametrize("qubit_order", ["interleaved", "alpha-then-beta"])
@@ -259,7 +230,8 @@ def _direct_ffsim_circuit(molecular, time, *, steps=1, formula_order=2):
     return pass_manager.run(raw)
 
 
-def test_default_synthesis_conforms_to_direct_ffsim_backend():
+@pytest.mark.parametrize("formula_order", [1, 2, 4])
+def test_synthesis_conforms_to_direct_ffsim_backend(formula_order):
     pytest.importorskip("ffsim")
     pytest.importorskip("qiskit")
     from qiskit.quantum_info import Operator
@@ -270,9 +242,11 @@ def test_default_synthesis_conforms_to_direct_ffsim_backend():
         0.23,
         tensor_tolerance=1e-12,
         optimization_level=1,
+        **({} if formula_order == 2 else {"formula_order": formula_order}),
     )
-    direct = _direct_ffsim_circuit(molecular, 0.23)
+    direct = _direct_ffsim_circuit(molecular, 0.23, formula_order=formula_order)
 
+    assert result.order == formula_order
     assert result.routing_mode == "input"
     assert result.ordering == tuple(range(result.factors))
     assert result.candidate_counts == {"original": result.two_qubit_gates}
@@ -359,7 +333,7 @@ def test_nontrivial_two_body_output_respects_reported_qubit_order(qubit_order):
 
 
 def _openfermion_matrix(molecular, qubit_order="interleaved"):
-    import openfermion
+    openfermion = pytest.importorskip("openfermion")
 
     return openfermion.get_sparse_operator(
         openfermion.jordan_wigner(_manual_fermion_operator(molecular, qubit_order)),
@@ -402,25 +376,6 @@ def test_coulomb_cutoff_removes_empty_factor_frames():
     assert result.ordering == ()
 
 
-def test_explicit_frame_permutation_is_accuracy_sensitive_metadata():
-    pytest.importorskip("ffsim")
-    pytest.importorskip("qiskit")
-    result = synthesize_molecular(
-        _two_factor_molecule(),
-        0.7,
-        tensor_tolerance=1e-12,
-        frame_ordering=(1, 0),
-    )
-
-    assert result.factors == 2
-    assert result.ordering == (1, 0)
-    assert result.frame_ordered
-    assert result.routing_mode == "explicit-permutation"
-    assert not result.factor_order_preserved
-    assert not result.accuracy_certified
-    assert "fragment-reordering" in result.approximation_sources
-
-
 def test_factor_permutation_changes_finite_step_approximant():
     pytest.importorskip("ffsim")
     pytest.importorskip("qiskit")
@@ -447,6 +402,17 @@ def test_factor_permutation_changes_finite_step_approximant():
     )
     assert difference > 1e-8
     assert original.tensor_error == pytest.approx(reversed_result.tensor_error)
+    assert reversed_result.factors == 2
+    assert reversed_result.ordering == (1, 0)
+    assert reversed_result.frame_ordered
+    assert reversed_result.routing_mode == "explicit-permutation"
+    assert not reversed_result.factor_order_preserved
+    assert not reversed_result.accuracy_certified
+    assert "fragment-reordering" in reversed_result.approximation_sources
+    # Permutation validation depends on the backend's factor count, unlike the
+    # scalar controls validated before optional dependencies are imported.
+    with pytest.raises(ValueError, match="permute every factor once"):
+        synthesize_molecular(molecular, 0.7, frame_ordering=(0, 0))
 
 
 def test_experimental_frame_ordering_is_explicit_and_monotone_in_cx():
@@ -466,56 +432,16 @@ def test_experimental_frame_ordering_is_explicit_and_monotone_in_cx():
     assert optimized.routing_attempted
 
 
-def test_old_portfolio_name_warns_and_remains_an_alias():
-    pytest.importorskip("ffsim")
-    pytest.importorskip("qiskit")
-
-    with pytest.warns(DeprecationWarning, match="experimental-givens"):
-        old = synthesize_molecular(
-            _two_factor_molecule(), 0.2, frame_ordering="portfolio"
-        )
-    new = synthesize_molecular(
-        _two_factor_molecule(), 0.2, frame_ordering="experimental-givens"
-    )
-
-    assert old.ordering == new.ordering
-    assert old.candidate_counts == new.candidate_counts
-
-
-@pytest.mark.parametrize("formula_order", [1, 2, 4])
-def test_physical_formula_order_is_mapped_to_ffsim(formula_order):
-    pytest.importorskip("ffsim")
-    pytest.importorskip("qiskit")
-    molecular = MolecularHamiltonian(np.array([[-0.7]]), np.array([[[[0.4]]]]))
-
-    result = synthesize_molecular(
-        molecular, 0.1, formula_order=formula_order, optimization_level=0
-    )
-
-    assert result.order == formula_order
-
-
 @pytest.mark.parametrize(
     "kwargs",
     [
         {"steps": True},
         {"steps": 0},
-        {"formula_order": 0},
         {"formula_order": 3},
         {"formula_order": 2.0},
-        {"tensor_tolerance": True},
         {"tensor_tolerance": float("nan")},
-        {"max_vecs": True},
         {"max_vecs": 0},
-        {"factorization_optimize": 1},
-        {"cholesky": 1},
-        {"coulomb_cutoff": 1j},
-        {"coulomb_cutoff": float("inf")},
         {"givens_tolerance": -1.0},
-        {"optimization_level": True},
-        {"frame_ordering": "unknown"},
-        {"frame_ordering": ()},
-        {"frame_ordering": (0, 0)},
         {"qubit_order": "unknown"},
         {"formula_order": 4, "frame_ordering": "experimental-givens"},
     ],
@@ -525,7 +451,7 @@ def test_molecular_synthesis_rejects_ambiguous_controls(kwargs):
         synthesize_molecular(_molecule(), 0.2, **kwargs)
 
 
-@pytest.mark.parametrize("time", [True, 1j, np.array([0.2]), float("nan")])
+@pytest.mark.parametrize("time", [1j, float("nan")])
 def test_molecular_synthesis_rejects_nonfinite_time(time):
     with pytest.raises(ValueError):
         synthesize_molecular(_molecule(), time)

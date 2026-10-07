@@ -38,6 +38,24 @@ def _finite_float(value: object, name: str) -> float:
     return parsed
 
 
+def _qasm3(width: int, gates, phase: float) -> str:
+    """Common byte-stable serializer for native and Clifford+T artifacts."""
+    lines = ["OPENQASM 3.0;", 'include "stdgates.inc";']
+    if width:
+        lines.append(f"qubit[{width}] q;")
+    if phase:
+        lines.append(f"gphase({phase!r});")
+    for gate in gates:
+        operands = ", ".join(f"q[{qubit}]" for qubit in gate.qubits)
+        if gate.kind == "rz":
+            assert gate.angle is not None
+            kind = f"rz({gate.angle!r})"
+        else:
+            kind = {"sdg": "inv @ s", "tdg": "inv @ t"}.get(gate.kind, gate.kind)
+        lines.append(f"{kind} {operands};")
+    return "\n".join(lines) + "\n"
+
+
 @dataclass(frozen=True)
 class NativeGate:
     r"""One gate in a dependency-free native emission.
@@ -155,22 +173,7 @@ class NativeCircuit:
     def to_qasm3(self) -> str:
         """Serialize deterministically as dependency-free OpenQASM 3 text."""
         phase = _finite_float(self.global_phase, "global_phase")
-        lines = ["OPENQASM 3.0;", 'include "stdgates.inc";']
-        if self.width:
-            lines.append(f"qubit[{self.width}] q;")
-        if phase != 0.0:
-            lines.append(f"gphase({phase!r});")
-
-        for gate in self.gates:
-            operands = ", ".join(f"q[{qubit}]" for qubit in gate.qubits)
-            if gate.kind == "rz":
-                assert gate.angle is not None
-                lines.append(f"rz({gate.angle!r}) {operands};")
-            elif gate.kind == "sdg":
-                lines.append(f"inv @ s {operands};")
-            else:
-                lines.append(f"{gate.kind} {operands};")
-        return "\n".join(lines) + "\n"
+        return _qasm3(self.width, self.gates, phase)
 
     def _gate_matrix(self, gate: NativeGate) -> np.ndarray:
         if gate.kind == "cx":
@@ -249,13 +252,8 @@ def _unique_vectors(circuit: Circuit, width: int) -> tuple[list[np.ndarray], lis
     return all_vectors, unique
 
 
-def frame_profile(circuit: Circuit, width: int | None = None) -> GF2FrameProfile:
-    """Measure the GF(2) span and restricted symplectic form of a rotation sequence."""
-    if width is None:
-        width = len(str(circuit.rotations[0][0])) if circuit.rotations else 0
-    if width < 0:
-        raise ValueError("A circuit width cannot be negative.")
-    _, unique = _unique_vectors(circuit, width)
+def _frame_profile_from_vectors(unique: list[np.ndarray], width: int) -> GF2FrameProfile:
+    """Measure an already parsed Pauli span without parsing the circuit again."""
     vectors = (
         np.array(unique, dtype=np.uint8).reshape(len(unique), 2 * width)
         if unique
@@ -267,6 +265,16 @@ def frame_profile(circuit: Circuit, width: int | None = None) -> GF2FrameProfile
         span_rank=gf2.rank(vectors),
         gram_rank=gf2.rank(gram_matrix),
     )
+
+
+def frame_profile(circuit: Circuit, width: int | None = None) -> GF2FrameProfile:
+    """Measure the GF(2) span and restricted symplectic form of a rotation sequence."""
+    if width is None:
+        width = len(str(circuit.rotations[0][0])) if circuit.rotations else 0
+    if width < 0:
+        raise ValueError("A circuit width cannot be negative.")
+    _, unique = _unique_vectors(circuit, width)
+    return _frame_profile_from_vectors(unique, width)
 
 
 def native_frame_candidate(circuit: Circuit, width: int) -> bool:
@@ -646,17 +654,27 @@ def ladder_circuit(circuit: Circuit, width: int) -> NativeCircuit:
     return emitted
 
 
-def native_frame_circuit(
+def native_frame_candidates(
     circuit: Circuit,
     width: int,
     *,
     lookahead: int = 8,
     discount_rate: float = 0.9,
-) -> NativeCircuit:
-    """Return the cheapest native Clifford-frame emission constructed here.
+) -> list[tuple[str, NativeCircuit]]:
+    """Construct named exact frame alternatives without choosing by gate cost.
 
-    The input order is never changed.  Every candidate is a concrete exact circuit;
-    the minimum is therefore safe even when the structural heuristic predicts badly.
+    The deterministic portfolio contains at most two abelian fixed frames, at
+    most ``6 * width`` single-logical-qubit fixed frames, or one rolling frame
+    for a general span. Fixed alternatives are named ``fixed-0``, ``fixed-1``,
+    etc.; the rolling alternative is named ``rolling``. An empty input returns
+    one ``empty`` circuit. Independent Pauli ladders are not included here.
+
+    Every alternative preserves input rotation order, absolute Rz angles
+    (``2 * abs(theta)``), and scalar phase. Signed Clifford conjugation may
+    change rotation signs and target wires. No rotation merging, approximation,
+    or gate-cost preselection is performed. ``lookahead`` and ``discount_rate``
+    configure only the rolling heuristic; callers may compare a bounded set of
+    their own settings after concrete downstream compilation.
     """
     if lookahead < 0:
         raise ValueError("Native-frame lookahead cannot be negative.")
@@ -667,20 +685,40 @@ def native_frame_circuit(
 
     vectors, unique = _unique_vectors(circuit, width)
     if not vectors:
-        return NativeCircuit(width)
-    profile = frame_profile(circuit, width)
+        return [("empty", NativeCircuit(width))]
+    profile = _frame_profile_from_vectors(unique, width)
     if profile.is_abelian:
-        candidates = [
-            _fixed_frame_circuit(circuit, vectors, width, frame, gates)
-            for frame, gates in _commuting_frames(unique, width)
-        ]
+        frames = _commuting_frames(unique, width)
     elif profile.single_qubit_dla:
-        candidates = [
-            _fixed_frame_circuit(circuit, vectors, width, frame, gates)
-            for frame, gates in _single_qubit_frames(unique, width)
-        ]
+        frames = _single_qubit_frames(unique, width)
     else:
-        candidates = [
-            _rolling_frame_circuit(circuit, vectors, width, lookahead, discount_rate)
-        ]
-    return min(candidates, key=lambda item: (item.two_qubit_gates, len(item.gates)))
+        return [(
+            "rolling",
+            _rolling_frame_circuit(circuit, vectors, width, lookahead, discount_rate),
+        )]
+    return [
+        (f"fixed-{index}", _fixed_frame_circuit(circuit, vectors, width, frame, gates))
+        for index, (frame, gates) in enumerate(frames)
+    ]
+
+
+def native_frame_circuit(
+    circuit: Circuit,
+    width: int,
+    *,
+    lookahead: int = 8,
+    discount_rate: float = 0.9,
+) -> NativeCircuit:
+    """Return the cheapest native Clifford-frame emission constructed here.
+
+    The input order is never changed. Every candidate is a concrete exact circuit;
+    the minimum is therefore safe even when the structural heuristic predicts badly.
+    Cost selection remains CX first, then total gates, with stable ties.
+    """
+    candidates = native_frame_candidates(
+        circuit, width, lookahead=lookahead, discount_rate=discount_rate,
+    )
+    return min(
+        (emitted for _, emitted in candidates),
+        key=lambda item: (item.two_qubit_gates, len(item.gates)),
+    )

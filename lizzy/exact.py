@@ -1,22 +1,34 @@
-"""
-    The exact branch: fixed-depth synthesis for algebras small enough to decompose.
+"""Fixed-depth synthesis for supported Pauli so(m) presentations.
 
-    A DLA of dimension d decomposes into d Pauli rotations whose count does not depend
-    on the evolution time, where a product formula needs a step count that grows with
-    both time and precision. When the DLA is polynomial, this is the whole game.
+Givens eliminates a group endpoint in a low-weight plane ordering. Paper BDI
+uses an independent graph-derived mapping: horizontal inputs have reusable
+K exp(-it A) K† factors; general inputs use recursive endpoint decomposition.
+Only horizontal BDI preserves the spin-cover phase. Neither route is a generic
+decomposition theorem for every small DLA.
 
-    :func:`free_part` extends the branch to Hamiltonians whose full DLA is exponential,
-    by finding the largest subset of terms that still closes into a small algebra. That
-    subset leaves the product formula entirely, taking its commutators out of the error
-    bound with it.
+``free_part`` extracts a supported subset for an exact layer inside a product
+formula. Its internal splitting error disappears, but cross-layer error remains.
 """
+
+from collections.abc import Iterator
+from dataclasses import dataclass, field, replace
+from functools import lru_cache
 
 import numpy as np
-from kak_tools import labelled_matrix_basis, map_dla_to_irrep, pauli_word_to_string
+from kak_tools import (
+    labelled_matrix_basis,
+    map_dla_to_irrep,
+    pauli_word_to_string,
+    recursive_bdi,
+)
+from kak_tools._horizontal_bdi import horizontal_generator_decomposition
+from kak_tools.map_to_irrep import HorizontalEmbeddingError
 from paulie.classifier.classification import TypeGraph
+from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 from scipy.linalg import expm
 
+from lizzy._orthogonal_mapping import map_orthogonal
 from lizzy.classify import classify, is_fast_forwardable, summands
 from lizzy.hamiltonian import (
     Circuit,
@@ -33,22 +45,22 @@ _irrep_cache: dict = {}
 
 def is_decomposable(hamiltonian_: PauliStringLinear) -> bool:
     """
-    Check whether the exact branch can handle a Hamiltonian in one piece.
+    Check eligibility for the default Givens route in one piece.
 
     Two conditions: the algebra must be small enough to be worth decomposing, and it
     must have an ``so(m)`` presentation, which is what the Pauli-word pipeline of
     ``kak_tools`` implements.
 
     Parts with more than ``max(64, 8n)`` terms are declined without classifying them, on the
-    same budget reasoning as :func:`free_part`: classification at dense sizes costs
-    minutes, and every polynomial DLA of a 2-local model lives on a chain or circle
-    with O(n) terms (`Wiersema et al. <https://doi.org/10.1038/s41534-024-00900-2>`__;
-    all-to-all XX+YY and all-to-all TFIM both classify exponential when checked).
+    same budget reasoning as :func:`free_part`: dense classification can be
+    expensive. This is a search cutoff for the targeted sparse model families,
+    not a necessary condition for a Hamiltonian to have a small DLA.
 
     Args:
         hamiltonian_ (PauliStringLinear): The Hamiltonian.
     Returns:
-        bool: True if :func:`decompose` will succeed on it directly.
+        bool: True if its classification is eligible for an exact attempt. The
+        upstream representation mapping can still fail for a generator set.
     """
     width = n_qubits(hamiltonian_)
     if len(terms_of(hamiltonian_)) > max(64, 8 * width):
@@ -63,8 +75,8 @@ def is_decomposable(hamiltonian_: PauliStringLinear) -> bool:
     # are accepted. The low-rank coincidences -- su(2) as so(3), sp(2) as so(5) --
     # also present an orthogonal size, but their irrep matching is not the line-graph
     # embedding, and the subgraph search behind it can run for hours on the junk
-    # sets the free-part greedy otherwise assembles out of them. Every model the
-    # exact branch is for classifies as type A.
+    # sets the free-part greedy otherwise assembles out of them. Explicit BDI uses
+    # its own verified generic mapper and does not apply this legacy filter.
     return all(
         morph.get_type() in (TypeGraph.A, TypeGraph.NONE)
         for morph in classification.get_morphs()
@@ -83,7 +95,7 @@ def decomposes_by_summand(hamiltonian_: PauliStringLinear) -> bool:
     Args:
         hamiltonian_ (PauliStringLinear): The Hamiltonian.
     Returns:
-        bool: True if every summand decomposes.
+        bool: True if every summand is eligible for an exact attempt.
     """
     return all(is_decomposable(part) for part in summands(hamiltonian_))
 
@@ -94,12 +106,24 @@ def _irrep(words: tuple[str, ...], width: int) -> tuple:
     Returns the labelled basis for the generators (to build the irrep Hamiltonian), a
     per-plane table of qubit words and spinor scales, an index ordering that makes
     adjacent planes carry the cheapest words available, and the irrep size ``m``.
+    Prefer the existing horizontal mapping so successful routes keep their plane
+    ordering. Givens also accepts nonhorizontal Hamiltonians: use the verified
+    full-algebra mapping when no horizontal embedding exists.
     """
     if words in _irrep_cache:
         return _irrep_cache[words]
 
-    mapping, signs, info = map_dla_to_irrep(list(words))
-    m = info.get_orthogonal_size()
+    try:
+        mapping, signs, info = map_dla_to_irrep(list(words))
+        m = info.get_orthogonal_size()
+    except ValueError as exc:
+        if not isinstance(exc.__cause__, HorizontalEmbeddingError):
+            raise
+        # The endpoint elimination only needs a complete so(m) representation,
+        # not H in a single BDI horizontal space. Keep mapping budgets and Lie
+        # verification in the shared mapper; this does not run the BDI algorithm.
+        mapping, signs, m, _ = map_orthogonal(words, width)
+        info = classify(hamiltonian({word: 1.0 for word in words}))
     basis = labelled_matrix_basis(mapping, signs, info)
 
     generators = {
@@ -138,34 +162,368 @@ def _irrep(words: tuple[str, ...], width: int) -> tuple:
     return _irrep_cache[words]
 
 
-def decompose(hamiltonian_: PauliStringLinear, time: float, route: str = "exact") -> Circuit:
-    r"""
-    Synthesize :math:`e^{-itH}` exactly, at a depth independent of the time.
+def _bdi_planes(matrix: np.ndarray) -> Iterator[tuple[int, int, float]]:
+    """Yield application-ordered SO(2) planes from the upstream BDI factor tree.
 
-    The algebra's irrep is so(m), so :math:`e^{tH_{\text{irrep}}}` is one orthogonal
-    m-by-m matrix, and reducing it to the identity with Givens rotations between
-    *adjacent* indices writes it as at most :math:`m(m-1)/2` plane rotations. Each
-    adjacent plane maps back to one Pauli rotation, and with the index ordering chosen
-    by :func:`_irrep` those words stay low-weight -- where mapping arbitrary-plane
-    rotations back yields Jordan-Wigner strings of weight up to m and inflates the
-    two-qubit count by a factor of the system size.
-
-    A plane rotation by :math:`\varphi` about a word with spinor scale :math:`a`
-    (``2 * sign``, the doubling of the covering map) is the gate rotation by
-    :math:`\varphi / a`; the leftover ambiguity of the cover is a global phase, which
-    the dense tests confirm.
-
-    Args:
-        hamiltonian_ (PauliStringLinear): The Hamiltonian.
-        time (float): Evolution time.
-        route (str): Label recorded against the rotations produced.
-    Returns:
-        Circuit: The rotations; tests/test_lizzy.py checks them against a dense
-        :math:`e^{-itH}`.
-
-    Raises:
-        NotImplementedError: If the algebra has no ``so(m)`` Pauli-word mapping.
+    This is the balanced CS recursion of arXiv:2503.19014, Appendix F.4,
+    not the horizontal Hamiltonian variant. Upstream factors multiply left to
+    right, while Circuit stores application order. Odd blocks pair axis i with
+    i + ceil(block_size/2), leaving the middle axis unpaired (Appendix F.5).
+    The recursion and determinant corrections belong to kak-tools; this adapter
+    only reads its terminal matrices/angles, including exact half-turns.
     """
+    if len(matrix) <= 1:
+        return
+    factors = recursive_bdi(
+        matrix, len(matrix), first_is_horizontal=False, validate=True,
+    )
+    for factor, start, end, kind in reversed(factors):
+        if kind.startswith("a"):
+            q = (end - start + 1) // 2
+            for index, angle in enumerate(factor):
+                yield start + index, start + q + index, float(angle)
+        else:
+            if end - start != 2:
+                raise ValueError("recursive BDI returned a nonterminal orthogonal block")
+            yield start, start + 1, float(np.arctan2(factor[0, 1], factor[0, 0]))
+
+
+@dataclass(frozen=True)
+class BDIOptimization:
+    """Bounded nullspace-gauge search, with heuristic costs for both K wings.
+
+    Estimates are not compiled T counts or upper bounds. The unchanged Cartan
+    rotations are excluded. ``eligible`` requires a structural nullspace of
+    dimension at least two; no extra freedom from zero/repeated rates is assumed.
+    """
+
+    eligible: bool
+    rotation_error: float
+    candidates: int
+    original_t_estimate: int
+    selected_t_estimate: int
+    original_nonclifford: int
+    selected_nonclifford: int
+    optimized: bool
+
+
+@dataclass(frozen=True)
+class BDIPlan:
+    """Reusable algebra-derived BDI synthesis, with no model-specific templates.
+
+    Horizontal inputs use the paper's VI.2 construction: only unwrapped Cartan
+    rates depend on time; recursive BDI compiles a fixed K, whose physical inverse
+    is emitted exactly. General inputs use the VI.1 endpoint decomposition and
+    retain its global-phase ambiguity. ``phase_preserving`` distinguishes them.
+    The private payload is immutable so cached plans cannot share mutable circuits.
+    """
+
+    irrep_size: int
+    partition: tuple[int, int]
+    mapping_kind: str
+    parameter_bound: int
+    _planes: tuple[tuple[int, int, str, float], ...] = field(repr=False)
+    _generator: tuple[tuple[float, ...], ...] = field(repr=False)
+    _wing: tuple[tuple[str, float], ...] = field(default=(), repr=False)
+    _cartan: tuple[tuple[str, float], ...] = field(default=(), repr=False)
+    optimization: BDIOptimization | None = None
+    _reference_frame: tuple[tuple[float, ...], ...] = field(default=(), repr=False)
+
+    @property
+    def phase_preserving(self) -> bool:
+        return self.mapping_kind == "horizontal-graph"
+
+    def circuit(self, time: float, route: str = "exact-bdi") -> Circuit:
+        """Evaluate the prepared circuit; horizontal evaluation needs no new SVD."""
+        time = float(time)
+        if not np.isfinite(time):
+            raise ValueError("time must be finite")
+        circuit = Circuit()
+        if time == 0:
+            return circuit
+        if self.phase_preserving:
+            # Application order: K†, exp(-it A), K. Mirror the same physical
+            # wing instead of independently lifting K† from its SO endpoint.
+            for word, angle in reversed(self._wing):
+                circuit.add(get_pauli_string(word), -angle, route)
+            for word, rate in self._cartan:
+                angle = time * rate
+                if not np.isfinite(angle):
+                    raise ValueError("time times a Cartan rate must be finite")
+                circuit.add(get_pauli_string(word), angle, route)
+            for word, angle in self._wing:
+                circuit.add(get_pauli_string(word), angle, route)
+        else:
+            scaled = -time * np.asarray(self._generator)
+            if not np.isfinite(scaled).all():
+                raise ValueError("time times the irrep generator must be finite")
+            matrix = expm(scaled)
+            planes = {(i, j): (word, scale) for i, j, word, scale in self._planes}
+            for i, j, angle in _bdi_planes(matrix):
+                word, scale = planes[(i, j)]
+                circuit.add(get_pauli_string(word), -angle / scale, route)
+        return circuit
+
+
+def prepare_bdi(
+    hamiltonian_: PauliStringLinear, *, cache: bool = True,
+    optimize: str = "none", rotation_error: float = 1e-6,
+) -> BDIPlan:
+    """Prepare paper BDI from the supplied Pauli algebra, for any evolution time.
+
+    App. F.6 horizontal mapping is attempted without model-name recognition or
+    Givens-oriented reordering. If no such mapping exists, a verified orthogonal
+    algebra embedding enables the general VI.1 algorithm. Unsupported algebras
+    or resource budgets fail explicitly. ``cache=False`` measures fresh plan
+    preparation; it does not clear unrelated PauLie caches.
+
+    ``optimize='t'`` searches a bounded set of legal nullspace completions of
+    horizontal K, scored by an estimated paired-wing T cost at the supplied
+    per-rotation precision. Every candidate uses the same paper BDI recursion.
+    The original factors remain a fallback; no globally minimal T count or
+    reduced rotation-count bound is claimed. Defaults retain the reference path.
+    """
+    if optimize not in ("none", "t"):
+        raise ValueError("BDI optimize must be 'none' or 't'")
+    rotation_error = float(rotation_error)
+    if not np.isfinite(rotation_error) or not 0 < rotation_error < 1:
+        raise ValueError("rotation_error must be finite and between zero and one")
+    terms = terms_of(hamiltonian_)
+    if any(not np.isfinite(c) or c.imag != 0 for c, _ in terms):
+        raise ValueError("BDI requires finite real Hamiltonian coefficients")
+    ordered = sorted((str(word), float(c.real)) for c, word in terms)
+    words, coefficients = zip(*ordered) if ordered else ((), ())
+    builder = _prepare_bdi if cache else _prepare_bdi.__wrapped__
+    return builder(
+        tuple(words), tuple(coefficients), n_qubits(hamiltonian_), optimize, rotation_error,
+    )
+
+
+def _compile_bdi_wing(k: np.ndarray, p: int, planes: dict) -> tuple[tuple[str, float], ...]:
+    wing = []
+    for start, stop in ((0, p), (p, len(k))):
+        for i, j, angle in _bdi_planes(k[start:stop, start:stop]):
+            word, scale = planes[(start + i, start + j)]
+            wing.append((word, -angle / scale))
+    return tuple(wing)
+
+
+def _bdi_nullspace_candidates(k: np.ndarray, p: int) -> Iterator[np.ndarray]:
+    """Change only the structural null columns, not the active singular frame.
+
+    QR supplies candidate orthonormal completions, never emitted Givens gates.
+    The fixed BDI recursion subsequently compiles the resulting full matrices.
+    The eight-order cap bounds work independently of the nullspace dimension.
+    """
+    q = len(k) - p
+    if abs(p - q) < 2:
+        return
+    start, stop = (p, len(k)) if q > p else (0, p)
+    block = k[start:stop, start:stop]
+    size, rank = len(block), min(p, q)
+    null = np.arange(size - rank) if q > p else np.arange(rank, size)
+    active = np.arange(size - rank, size) if q > p else np.arange(rank)
+    frame = block[:, active]
+    for shift in range(min(size, 8)):
+        axes = np.roll(np.eye(size), shift, axis=1)
+        completed, _ = np.linalg.qr(np.column_stack((frame, axes)), mode="complete")
+        candidate_block = block.copy()
+        candidate_block[:, null] = completed[:, rank:]
+        # A reflection on a null column leaves H unchanged and keeps K in SO.
+        if np.linalg.det(candidate_block) < 0:
+            candidate_block[:, null[0]] *= -1
+        candidate = k.copy()
+        candidate[start:stop, start:stop] = candidate_block
+        yield candidate
+
+
+def _validated_bdi_gauge_wings(k, central, generator, p, planes):
+    """Yield legal bounded completions, compiled with the unchanged BDI recursion."""
+    tolerance = 1e-10 * max(1.0, float(np.max(np.abs(generator))))
+    for index, candidate in enumerate(_bdi_nullspace_candidates(k, p), start=1):
+        # Protect the lift: candidates must be legal SO(p) x SO(q) gauges of H.
+        blocks = (candidate[:p, :p], candidate[p:, p:])
+        if any(
+            not np.allclose(block.T @ block, np.eye(len(block)), rtol=0, atol=1e-11)
+            or not np.isclose(np.linalg.det(block), 1.0, rtol=0, atol=1e-10)
+            for block in blocks
+        ) or not np.allclose(
+            candidate @ central @ candidate.T, generator, rtol=0, atol=tolerance,
+        ):
+            continue
+        try:
+            wing = _compile_bdi_wing(candidate, p, planes)
+        except (ValueError, np.linalg.LinAlgError):
+            # A numerically singular candidate must not invalidate the reference.
+            continue
+        yield index, wing
+
+
+def bdi_gauge_candidates(plan: BDIPlan) -> tuple[tuple[str, BDIPlan], ...]:
+    """Expose bounded legal gauge alternatives without choosing a cost objective.
+
+    The supplied immutable plan is always first, labelled ``reference``. For
+    horizontal plans, enumerate the same at-most-eight structural-nullspace
+    completions used by ``optimize='t'``, starting from the stored SVD frame.
+    Exactly duplicate wings are omitted; no candidate is discarded by a cost
+    estimate. Balanced, almost-balanced and general endpoint plans have no such
+    search here and return only the reference.
+
+    Every alternative retains the paper's mapping, recursive BDI plane order,
+    Cartan rates and parameter bound. Its physical inverse wing is still emitted
+    by :meth:`BDIPlan.circuit`. Cost selection belongs to the caller after joining
+    complete circuits and compiling them at a common total error budget. This is
+    a bounded proposal set, not an enumeration of all possible BDI gauges.
+    """
+    if not isinstance(plan, BDIPlan):
+        raise TypeError("Expected a BDIPlan for gauge enumeration")
+    candidates = [("reference", plan)]
+    p, q = plan.partition
+    if not plan.phase_preserving or abs(p - q) < 2 or not plan._reference_frame:
+        return tuple(candidates)
+
+    planes = {(i, j): (word, scale) for i, j, word, scale in plan._planes}
+    inverse = {word: (i, j, scale) for (i, j), (word, scale) in planes.items()}
+    central = np.zeros((plan.irrep_size, plan.irrep_size))
+    for word, rate in plan._cartan:
+        i, j, scale = inverse[word]
+        central[i, j], central[j, i] = rate * scale, -rate * scale
+    seen = {plan._wing}
+    for index, wing in _validated_bdi_gauge_wings(
+        np.asarray(plan._reference_frame), central, np.asarray(plan._generator), p, planes,
+    ):
+        if wing in seen:
+            continue
+        seen.add(wing)
+        candidates.append((f"nullspace-{index}", replace(plan, _wing=wing, optimization=None)))
+    return tuple(candidates)
+
+
+def _optimize_bdi_wing(
+    k: np.ndarray, central: np.ndarray, generator: np.ndarray, p: int,
+    planes: dict, baseline: tuple[tuple[str, float], ...], rotation_error: float,
+) -> tuple[tuple[tuple[str, float], ...], BDIOptimization]:
+    from lizzy.clifford_t import estimate_rotation_t_count
+
+    def score(wing):
+        costs = [estimate_rotation_t_count(angle, rotation_error) for _, angle in wing]
+        return 2 * sum(costs), 2 * sum(cost > 0 for cost in costs)
+
+    original = score(baseline)
+    selected, selected_score = baseline, original
+    candidates = 1
+    q = len(k) - p
+    eligible = abs(p - q) >= 2
+    for _, wing in _validated_bdi_gauge_wings(k, central, generator, p, planes):
+        candidates += 1
+        candidate_score = score(wing)
+        if candidate_score < selected_score:
+            selected, selected_score = wing, candidate_score
+    return selected, BDIOptimization(
+        eligible=eligible,
+        rotation_error=rotation_error,
+        candidates=candidates,
+        original_t_estimate=original[0],
+        selected_t_estimate=selected_score[0],
+        original_nonclifford=original[1],
+        selected_nonclifford=selected_score[1],
+        optimized=selected is not baseline,
+    )
+
+
+@lru_cache(maxsize=32)
+def _prepare_bdi(
+    words: tuple[str, ...], coefficients: tuple[float, ...], width: int,
+    optimize: str, rotation_error: float,
+) -> BDIPlan:
+    mapping, signs, size, partition = map_orthogonal(words, width)
+    planes = {
+        pair: (str(pauli_word_to_string(word, width)), 2.0 * signs[pair])
+        for pair, word in mapping.items()
+    }
+    inverse = {word: pair for pair, (word, _) in planes.items()}
+    generator = np.zeros((size, size))
+    for word, coefficient in zip(words, coefficients, strict=True):
+        i, j = inverse[word]
+        generator[i, j] = coefficient * planes[(i, j)][1]
+        generator[j, i] = -generator[i, j]
+    payload = tuple((i, j, word, scale) for (i, j), (word, scale) in planes.items())
+    immutable_generator = tuple(tuple(row) for row in generator)
+    if partition is None:
+        return BDIPlan(
+            irrep_size=size,
+            partition=(size // 2, size - size // 2),
+            mapping_kind="general-graph",
+            parameter_bound=size * (size - 1) // 2,
+            _planes=payload,
+            _generator=immutable_generator,
+            optimization=(
+                BDIOptimization(False, rotation_error, 0, 0, 0, 0, 0, False)
+                if optimize == "t" else None
+            ),
+        )
+
+    p, q = partition
+    # The tested upstream generator SVD is recorded in README. Its high-level
+    # horizontal compiler uses Givens for K, so compile both K blocks here with BDI.
+    k, rates, cartan_planes = horizontal_generator_decomposition(generator, p)
+    central = np.zeros_like(generator)
+    cartan = []
+    for (i, j), rate in zip(cartan_planes, rates, strict=True):
+        central[i, j], central[j, i] = rate, -rate
+        word, scale = planes[(i, j)]
+        cartan.append((word, float(rate / scale)))
+    if not np.allclose(
+        k @ central @ k.T, generator, rtol=0,
+        atol=1e-10 * max(1.0, np.max(np.abs(generator))),
+    ):
+        raise ValueError("horizontal BDI factors do not reconstruct the Hamiltonian")
+    wing = _compile_bdi_wing(k, p, planes)
+    optimization = None
+    if optimize == "t":
+        wing, optimization = _optimize_bdi_wing(
+            k, central, generator, p, planes, wing, rotation_error,
+        )
+    bound = p * (p - 1) + q * (q - 1) + min(p, q)
+    return BDIPlan(
+        irrep_size=size,
+        partition=partition,
+        mapping_kind="horizontal-graph",
+        parameter_bound=bound,
+        _planes=payload,
+        _generator=immutable_generator,
+        _wing=wing,
+        _cartan=tuple(cartan),
+        optimization=optimization,
+        _reference_frame=tuple(tuple(row) for row in k),
+    )
+
+
+def decompose(
+    hamiltonian_: PauliStringLinear, time: float, route: str = "exact", *,
+    method: str = "givens",
+) -> Circuit:
+    r"""Synthesize :math:`e^{-itH}` with time-independent depth.
+
+    ``method='givens'`` eliminates the SO endpoint using at most m(m-1)/2
+    adjacent-plane rotations. The low-weight ordering from :func:`_irrep` is
+    a gate-cost heuristic, not an optimality guarantee.
+
+    ``method='bdi'`` uses :func:`prepare_bdi`, following arXiv:2503.19014,
+    Sections VI.1--VI.2 and Appendices F.4--F.6. Its graph-derived mapping is
+    independent of Hamiltonian names and Givens' ordering. Horizontal inputs
+    preserve phase and reuse a fixed K; see :class:`BDIPlan` for their bounds.
+
+    Givens and general endpoint BDI are exact only up to global phase and are
+    unsuitable for controlled phase-sensitive evolution. The SO-to-Pauli
+    conversion divides each plane angle by its signed spinor scale (±2).
+    ``route`` labels the emitted rotations. Unsupported representations raise;
+    neither method falls back to the other.
+    """
+    if method not in {"givens", "bdi"}:
+        raise ValueError("exact method must be 'givens' or 'bdi'")
+    if method == "bdi":
+        return prepare_bdi(hamiltonian_).circuit(time, route)
     terms = terms_of(hamiltonian_)
     words = tuple(str(p) for _, p in terms)
     width = n_qubits(hamiltonian_)
@@ -175,15 +533,18 @@ def decompose(hamiltonian_: PauliStringLinear, time: float, route: str = "exact"
     for coefficient, pauli in terms:
         irrep_h = irrep_h + coefficient.real * generators[str(pauli)]
 
-    # Reduce the permuted orthogonal matrix to the identity column by column with
-    # adjacent-row Givens rotations; the applied rotations, transposed and in reverse,
-    # are the circuit.
+    if time == 0:
+        return Circuit()
+
+    # Reduce V = exp(+t H_irrep) to the identity with adjacent-row Givens rotations.
+    # Their elimination product is V^-1, the representative of exp(-itH).
     matrix = expm(time * irrep_h)[np.ix_(order, order)]
     applied: list[tuple[int, float]] = []
     for column in range(m - 1):
         for row in range(m - 2, column - 1, -1):
             a, b = matrix[row, column], matrix[row + 1, column]
-            if abs(b) < 1e-14:
+            # A negative pivot still needs a pi rotation even if b is zero.
+            if abs(b) < 1e-14 and a >= 0:
                 continue
             angle = float(np.arctan2(b, a))
             cosine, sine = np.cos(angle), np.sin(angle)
@@ -192,11 +553,10 @@ def decompose(hamiltonian_: PauliStringLinear, time: float, route: str = "exact"
             matrix[row] = upper
             applied.append((row, angle))
 
-    # The applied rotations satisfy R_N ... R_1 V = I, so V = R_1^T ... R_N^T. The map
-    # from plane generators to qubit rotations sends B to -iP, which negates brackets,
-    # so it reverses products: the qubit circuit applies M(R_1^T) first. Transposing a
-    # plane rotation negates its angle, and a plane whose indices come out reversed
-    # under the ordering negates it once more.
+    # rho(+iP) = scale * (E_ij - E_ji), so a circuit angle -angle/scale represents
+    # the elimination exp(angle * (E_ij - E_ji)). Emitting R_1 first gives the matrix
+    # product R_N ... R_1 = V^-1. Reversing a plane's relabeled indices negates its
+    # angle once more. The SO(m) endpoint alone does not fix the spin-cover phase.
     circuit = Circuit()
     for row, angle in applied:
         i, j = order[row], order[row + 1]
@@ -212,50 +572,21 @@ def decompose(hamiltonian_: PauliStringLinear, time: float, route: str = "exact"
 def free_part(
     hamiltonian_: PauliStringLinear,
 ) -> tuple[PauliStringLinear | None, PauliStringLinear]:
-    r"""
-    Split a Hamiltonian into a decomposable part and the rest.
+    """Extract a noncommuting, exactly compilable subset and its remainder.
 
-    Even when the full DLA is exponential, a subset of the terms often closes into a
-    small one -- the transverse-field part of a Heisenberg model, say. That subset can
-    be compiled exactly at fixed depth, and because it is no longer inside the product
-    formula, none of its internal commutators appear in the Trotter error bound.
+    Greedy growth offers whole interaction families in descending coefficient
+    weight, then individual terms. If this finds only commuting terms, retry
+    while deferring commuting families: heavy diagonal families can otherwise
+    prevent useful noncommuting terms from joining the subset. This is a
+    heuristic, not a maximal-subalgebra search.
 
-    The subsets worth finding are structured rather than arbitrary -- the free part of a
-    Heisenberg chain is *all* of its XX and YY terms, not some mixture -- so terms are
-    offered in whole interaction families, ordered by the total weight they carry. A
-    second pass then tops the set up with individual terms. Greedy growth cannot
-    backtrack, so the ordering is what decides the answer.
+    Candidates above ``max(64, 8n)`` terms are declined before classification
+    to bound search cost. A supported subset becomes one exact product-formula
+    layer, removing internal splitting error but not cross-layer commutators.
+    Mutually commuting subsets provide no such benefit and are discarded.
 
-    Ordering by weight alone decides it badly on chemistry. The heaviest families there
-    are the diagonal ones, which commute with each other; the greedy takes them first,
-    and the set they build is large enough that every family which does *not* commute
-    then fails the classification. What comes out is a set of mutually commuting terms,
-    which is discarded at the end -- extracting it would remove no commutator from the
-    bound -- so the answer is no free part at all, after several hundred classifications
-    spent reaching it.
-
-    Only that outcome is worth a second attempt, and it gets one: the families that
-    leave the set commuting are held back and offered again once something
-    non-commuting has been found. Taking them early is not wrong in general -- it is
-    how the set grows largest, and their commutators with the rest of the free part do
-    leave the bound -- so the second ordering is used where the first has already
-    failed rather than in place of it. On LiH that is the difference between no free
-    part and a forty-four term one.
-
-    Candidates are capped at ``max(64, 8n)`` terms before any classification runs. This is a
-    search budget, not a theorem: what it protects against is spending minutes
-    classifying a dense model's n^2-term families -- all-to-all XX+YY looks like
-    hopping but is not, since beyond nearest neighbours the Jordan-Wigner strings make
-    the terms more than quadratic and the algebra exponential, so those classifications
-    were expensive ways of hearing no. Every quadratic family of a local model has O(n)
-    terms and fits comfortably.
-
-    Args:
-        hamiltonian_ (PauliStringLinear): The Hamiltonian.
-    Returns:
-        tuple[PauliStringLinear | None, PauliStringLinear]: The decomposable part, or
-        None if no subset of at least two terms qualifies, and the remainder. The two
-        together always contain every original term.
+    Return ``(None, hamiltonian_)`` if no qualifying subset exists. Otherwise
+    the returned pair contains every original term, without overlap.
     """
     terms = [(c, str(p)) for c, p in terms_of(hamiltonian_)]
     budget = max(64, 8 * n_qubits(hamiltonian_))

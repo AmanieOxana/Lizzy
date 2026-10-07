@@ -8,7 +8,6 @@ symbolic equation engine are needed: Pauli adjoint actions are planar rotations.
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from operator import index
 
 import numpy as np
 from paulie.common.pauli_string_bitarray import PauliString
@@ -16,6 +15,7 @@ from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 from scipy.integrate import solve_ivp
 
+from lizzy._numerical import _positive_integer, _time_span, _validate_chart_controls
 from lizzy.hamiltonian import Circuit, fold_phases, terms_of, weight
 
 
@@ -108,16 +108,6 @@ class DrivenResult:
     @property
     def chart_restarts(self) -> int:
         return max(0, len(self.intervals) - 1)
-
-
-def _positive_integer(value: int, name: str) -> int:
-    try:
-        parsed = index(value)
-    except TypeError as exc:
-        raise ValueError(f"{name} must be a positive integer") from exc
-    if isinstance(value, (bool, np.bool_)) or parsed < 1:
-        raise ValueError(f"{name} must be a positive integer")
-    return parsed
 
 
 def _closure(words: Sequence[str], limit: int) -> list[PauliString]:
@@ -230,21 +220,9 @@ def synthesize_driven(
     max_dimension = _positive_integer(max_dimension, "max_dimension")
     max_segments = _positive_integer(max_segments, "max_segments")
     max_rhs_evaluations = _positive_integer(max_rhs_evaluations, "max_rhs_evaluations")
-    span = np.asarray(time_span, dtype=float)
-    if span.shape != (2,) or not np.all(np.isfinite(span)):
-        raise ValueError("time_span must contain two finite times")
-    start, end = map(float, span)
-    if not np.isfinite(end - start):
-        raise ValueError("time_span duration must be finite")
-    for value, name in ((rtol, "rtol"), (atol, "atol")):
-        if not np.isfinite(value) or value <= 0:
-            raise ValueError(f"{name} must be finite and positive")
-    if chart_radius is not None and (not np.isfinite(chart_radius) or not 0 < chart_radius <= 0.5):
-        raise ValueError("chart_radius must be None or finite in (0, 0.5]")
-    if not np.isfinite(condition_limit) or condition_limit <= 1:
-        raise ValueError("condition_limit must be finite and greater than one")
-    if np.isnan(max_step) or max_step <= 0:
-        raise ValueError("max_step must be positive")
+    start, end = _time_span(time_span)
+    _validate_chart_controls(rtol=rtol, atol=atol, max_step=max_step,
+                             chart_radius=chart_radius, condition_limit=condition_limit)
 
     basis = _closure(hamiltonian.paulis, max_dimension)
     if basis_order is not None:
@@ -309,7 +287,6 @@ def synthesize_driven(
             for mesh_angles in solution.y.T:
                 check_chart(mesh_angles)
             angles = solution.y[:, -1]
-            check_chart(angles)
         except _ChartLimit as exc:
             rejected += 1
             midpoint = current + (target - current) / 2

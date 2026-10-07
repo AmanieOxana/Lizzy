@@ -1,0 +1,142 @@
+{
+  "scope": "Post-measurement diagnostic only; primary data and classifications unchanged",
+  "case": "LiH-8",
+  "time": 0.25,
+  "steps": 1,
+  "assumed_sector": [
+    2,
+    2
+  ],
+  "sector_dimension": 36,
+  "state_seed": 20260921,
+  "compiler_seed": 1729,
+  "approximation_degree": 1,
+  "factorization_fingerprint": "8ec6d82919646516a2d6ede276da2613d91a66395f9923376d39b7429c12f328",
+  "retained_factorization_reused_for_every_level": true,
+  "tensor_sha256": "fb836fc53166b76cf010bb73dbe26a6d3cb2bbbdf0a89a8ec4466155e3bc280f",
+  "versions": {
+    "python": "3.13.7",
+    "numpy": "2.4.1",
+    "scipy": "1.17.1",
+    "openfermion": "1.8.1",
+    "ffsim": "0.0.84",
+    "qiskit": "2.5.1"
+  },
+  "thread_environment": {
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1"
+  },
+  "logical_df_max_reference_infidelity": 3.4023894812662547e-12,
+  "sampled_accuracy_threshold": 0.001,
+  "frozen_emission_guard": 1e-9,
+  "levels": [
+    {
+      "optimization_level": 0,
+      "cx": 1020,
+      "total_gates": 5934,
+      "state_reference_infidelities": [
+        3.327560449406519e-12,
+        3.4028335704761048e-12,
+        3.2787106363230123e-12,
+        3.0015989693765732e-12
+      ],
+      "max_reference_infidelity": 3.4028335704761048e-12,
+      "state_logical_mismatch_infidelities": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "max_logical_mismatch_infidelity": 0,
+      "normalization_error": 2.19824158875781e-14,
+      "meets_primary_sampled_target": true,
+      "meets_frozen_emission_guard": true
+    },
+    {
+      "optimization_level": 1,
+      "cx": 904,
+      "total_gates": 3464,
+      "state_reference_infidelities": [
+        3.327338404801594e-12,
+        3.4023894812662547e-12,
+        3.2789326809279373e-12,
+        3.001376924771648e-12
+      ],
+      "max_reference_infidelity": 3.4023894812662547e-12,
+      "state_logical_mismatch_infidelities": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "max_logical_mismatch_infidelity": 0,
+      "normalization_error": 8.659739592076221e-15,
+      "meets_primary_sampled_target": true,
+      "meets_frozen_emission_guard": true
+    },
+    {
+      "optimization_level": 2,
+      "cx": 836,
+      "total_gates": 3397,
+      "state_reference_infidelities": [
+        3.692601779903271e-12,
+        4.075217940879838e-9,
+        4.1965075858740875e-9,
+        3.7119156637288597e-9
+      ],
+      "max_reference_infidelity": 4.1965075858740875e-9,
+      "state_logical_mismatch_infidelities": [
+        3.6259883984257613e-13,
+        4.059484526308665e-9,
+        4.242755480277083e-9,
+        3.758170663559213e-9
+      ],
+      "max_logical_mismatch_infidelity": 4.242755480277083e-9,
+      "normalization_error": 2.6645352591003757e-15,
+      "meets_primary_sampled_target": true,
+      "meets_frozen_emission_guard": false
+    },
+    {
+      "optimization_level": 3,
+      "cx": 836,
+      "total_gates": 3396,
+      "state_reference_infidelities": [
+        3.692823824508196e-12,
+        4.075218162924443e-9,
+        4.196508029963297e-9,
+        3.7119161078180696e-9
+      ],
+      "max_reference_infidelity": 4.196508029963297e-9,
+      "state_logical_mismatch_infidelities": [
+        3.6259883984257613e-13,
+        4.0594843042640605e-9,
+        4.242754814143268e-9,
+        3.758170885603818e-9
+      ],
+      "max_logical_mismatch_infidelity": 4.242754814143268e-9,
+      "normalization_error": 2.6645352591003757e-15,
+      "meets_primary_sampled_target": true,
+      "meets_frozen_emission_guard": false
+    }
+  ],
+  "level3_pass_evidence": {
+    "last_verified_below_guard": {
+      "index": 18,
+      "name": "MinimumPoint",
+      "total_gates": 5760,
+      "max_logical_mismatch_infidelity": 0,
+      "normalization_error": 1.9206858326015208e-14
+    },
+    "first_exceeding_guard": {
+      "index": 19,
+      "name": "TwoQubitPeepholeOptimization",
+      "total_gates": 4278,
+      "max_logical_mismatch_infidelity": 4.242754814143268e-9,
+      "normalization_error": 2.4424906541753444e-15
+    },
+    "unreplayable_passes_before_first_change": []
+  },
+  "interpretation": "Pass replay identifies where the sampled logical discrepancy first appears. It does not prove which internal Weyl specialization or numerical tolerance causes it. Passing the evolution target does not retrospectively override the frozen emission guard.",
+  "reproduction_note": "This JSON is the captured reproducible run, not the earlier ad-hoc observation. The earlier run reported CX counts 1048/896/828/828 without logging its factorization fingerprint; this run reports its own exact counts and retained-factor fingerprint. Both located the same pass and approximately 4.24275e-9 mismatch. Do not replace primary measurement counts with diagnostic counts."
+}

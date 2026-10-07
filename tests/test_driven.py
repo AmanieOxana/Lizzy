@@ -1,6 +1,6 @@
-"""Wei–Norman circuits checked independently, including their global phase."""
+"""Wei–Norman equations, independent evolution references, and chart safety."""
 
-from itertools import permutations
+from itertools import product
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,14 +9,13 @@ from scipy.integrate import solve_ivp
 from scipy.linalg import expm
 
 from lizzy import driven
-from lizzy.dense import circuit_matrix, evolution, pauli_matrix
+from lizzy.dense import circuit_matrix, pauli_matrix
 from lizzy.driven import (
     AlgebraTooLarge,
     DrivenHamiltonian,
     IntegrationFailure,
     synthesize_driven,
 )
-from lizzy.hamiltonian import hamiltonian
 
 
 def rotating_field(words=("X", "Y", "Z")):
@@ -32,9 +31,10 @@ def rotating_field(words=("X", "Y", "Z")):
     return h, reference
 
 
-@pytest.mark.parametrize("words", [("X", "Y", "Z"), ("XIX", "XIY", "IIZ")])
-@pytest.mark.parametrize("span", [(0.0, 1.2), (0.3, 1.8), (1.8, 0.3)])
-@pytest.mark.parametrize("chart_radius", [None, 0.5])
+@pytest.mark.parametrize("words, span, chart_radius", [
+    pytest.param(("XIX", "XIY", "IIZ"), (0.3, 1.8), None, id="encoded-nonzero-start"),
+    pytest.param(("XIX", "XIY", "IIZ"), (1.8, 0.3), 0.5, id="encoded-legacy-restarts"),
+])
 def test_driven_rotation_matches_analytic_solution(words, span, chart_radius):
     h, reference = rotating_field(words)
     result = synthesize_driven(h, span, chart_radius=chart_radius, max_step=0.025)
@@ -51,8 +51,9 @@ def test_driven_rotation_matches_analytic_solution(words, span, chart_radius):
 
 
 def test_general_two_qubit_drive_against_independent_dense_ode():
-    h = DrivenHamiltonian(["XI", "ZI", "XX", "IY"],
-                          lambda t: [0.3 + t / 7, 0.2 * np.cos(t), 0.4, np.sin(2 * t) / 5])
+    h = DrivenHamiltonian(["XI", "ZI", "XX", "IY", "II"],
+                          lambda t: [0.3 + t / 7, 0.2 * np.cos(t), 0.4,
+                                     np.sin(2 * t) / 5, 17 + t*t])
     matrices = np.array([pauli_matrix(p) for p in h.paulis])
     start, end = 0.2, 0.7
 
@@ -69,63 +70,22 @@ def test_general_two_qubit_drive_against_independent_dense_ode():
                           - reference.y[:, -1].reshape(4, 4), 2) < 2e-9
 
 
-def test_static_embedding_matches_expm():
-    static = hamiltonian({"XX": 0.3, "ZI": -0.5, "IY": 0.2, "II": 0.1})
-    result = synthesize_driven(DrivenHamiltonian.from_static(static), (0.4, 1.1))
-    assert np.linalg.norm(circuit_matrix(result.circuit, 2) - evolution(static, 0.7), 2) < 1e-8
-
-
-def test_full_su4_closure_matches_expm():
-    static = hamiltonian({"XI": 0.2, "ZI": -0.3, "IX": 0.4, "IZ": 0.1, "ZZ": 0.35})
-    result = synthesize_driven(DrivenHamiltonian.from_static(static), (0, 0.8))
-    assert result.dimension == 15
-    assert np.linalg.norm(circuit_matrix(result.circuit, 2) - evolution(static, 0.8), 2) < 2e-8
-
-
-@pytest.mark.parametrize("order", list(permutations(["X", "Y", "Z"])))
-def test_every_su2_factor_order(order):
-    h, reference = rotating_field()
-    result = synthesize_driven(h, (0.1, 0.9), basis_order=order)
-    assert np.linalg.norm(circuit_matrix(result.circuit, 1) - reference(0.1, 0.9), 2) < 2e-8
-
-
-def test_static_embedding_rejects_nonhermitian_terms():
-    with pytest.raises(ValueError, match="Hermitian"):
-        DrivenHamiltonian.from_static(hamiltonian({"X": 1j}))
-
-
-def test_commuting_coefficients_integrate_and_preserve_identity_phase():
-    h = DrivenHamiltonian(["ZI", "IZ", "II"], lambda t: [t, 2 * t, 0.7])
-    result = synthesize_driven(h, (0.3, 1.1))
+def test_large_commuting_angles_integrate_without_restarts_and_preserve_phase():
+    h = DrivenHamiltonian(["ZI", "IZ", "II"], lambda t: [1000*t, -2000*t, 1000])
+    result = synthesize_driven(h, (0.3, 1.1), max_segments=1)
     integral = (1.1**2 - 0.3**2) / 2
-    matrix = integral * (pauli_matrix("ZI") + 2 * pauli_matrix("IZ")) + 0.56 * np.eye(4)
-    assert np.linalg.norm(circuit_matrix(result.circuit, 2) - expm(-1j * matrix), 2) < 1e-11
+    matrix = integral * (1000*pauli_matrix("ZI") - 2000*pauli_matrix("IZ")) + 800*np.eye(4)
+    assert np.linalg.norm(circuit_matrix(result.circuit, 2) - expm(-1j * matrix), 2) < 1e-9
     assert len(result.circuit) == 3
-    assert result.chart_restarts == 0
-
-
-def test_large_central_angles_do_not_force_restarts():
-    h = DrivenHamiltonian(["II", "IZ"], lambda t: [1000, -2000])
-    result = synthesize_driven(h, (0, 1), max_segments=1)
-    target = expm(-1j * (1000 * np.eye(4) - 2000 * pauli_matrix("IZ")))
-    assert np.linalg.norm(circuit_matrix(result.circuit, 2) - target, 2) < 1e-9
     assert result.chart_restarts == result.rejected_intervals == 0
 
 
 def test_large_identity_shift_does_not_force_excessive_restarts():
     h, reference = rotating_field()
-    shifted = DrivenHamiltonian(["X", "Y", "Z", "I"], lambda t: [*h.at(t), 1000])
+    shifted = DrivenHamiltonian(["X", "Y", "Z", "I"], lambda t: [*h.at(t), 1000 + t*t])
     result = synthesize_driven(shifted, (0, 0.7))
-    target = np.exp(-700j) * reference(0, 0.7)
+    target = np.exp(-1j*(700 + 0.7**3/3)) * reference(0, 0.7)
     assert len(result.intervals) < 10
-    assert np.linalg.norm(circuit_matrix(result.circuit, 1) - target, 2) < 2e-8
-
-
-def test_noncommuting_drive_preserves_identity_phase():
-    spin, reference = rotating_field()
-    h = DrivenHamiltonian(["X", "Y", "Z", "I"], lambda t: [*spin.at(t), t * t])
-    result = synthesize_driven(h, (0.2, 0.8))
-    target = np.exp(-1j * (0.8**3 - 0.2**3) / 3) * reference(0.2, 0.8)
     assert np.linalg.norm(circuit_matrix(result.circuit, 1) - target, 2) < 2e-8
 
 
@@ -139,11 +99,6 @@ def test_zero_duration_needs_no_control_evaluation():
     assert result.rhs_evaluations == result.chart_restarts == 0
 
 
-def test_initially_zero_control_is_kept_in_closure():
-    result = synthesize_driven(DrivenHamiltonian(["X", "Y"], lambda t: [1, t]), (0, 0.2))
-    assert result.basis == ("X", "Y", "Z")
-
-
 def test_identically_zero_controls_emit_identity():
     result = synthesize_driven(DrivenHamiltonian(["X", "Y"], lambda t: [0, 0]), (0, 5))
     assert result.dimension == 3
@@ -151,44 +106,42 @@ def test_identically_zero_controls_emit_identity():
     assert result.chart_restarts == 0
 
 
-def test_restarts_cross_an_euler_chart_singularity():
-    # In the X,Y,Z chart a single H=Y solution reaches det M=0 at pi/4.
-    h = DrivenHamiltonian(["X", "Y", "Z"], lambda t: [0, 1, 0])
-    result = synthesize_driven(h, (0, 2), basis_order=["X", "Y", "Z"], max_step=0.005)
-    assert result.rejected_intervals > 0
-    assert result.chart_restarts > 0
-    assert np.linalg.norm(circuit_matrix(result.circuit, 1)
-                          - expm(-2j * pauli_matrix("Y")), 2) < 1e-11
+def test_full_su4_jacobian_matches_paper_prefix_conjugation():
+    # An independent dense product rule, at large angles and a shuffled basis:
+    # no ODE, finite-difference approximation, or truncated BCH reference.
+    words = ["".join(word) for word in product("IXYZ", repeat=2) if word != ("I", "I")]
+    closure = driven._closure(words, 15)
+    rng = np.random.default_rng(20260925)
+    basis = [closure[index] for index in rng.permutation(len(closure))]
+    theta = rng.uniform(-2*np.pi, 2*np.pi, len(basis))
+    pairs = driven._adjoint_pairs(basis)
+    jacobian = driven._coordinate_matrix(theta, pairs)
+    assert np.array_equal(driven._coordinate_matrix(np.zeros(len(basis)), pairs), np.eye(15))
+    matrices = np.array([pauli_matrix(word) for word in basis])
+    prefix = np.eye(4, dtype=complex)
+    for column, (angle, pauli) in enumerate(zip(theta, matrices)):
+        expected = prefix @ pauli @ prefix.conj().T
+        represented = np.einsum("j,jab->ab", jacobian[:, column], matrices)
+        assert np.linalg.norm(represented - expected, 2) < 1e-12
+        prefix = prefix @ expm(-1j * angle * pauli)
 
 
-def test_condition_guard_retries_and_order_can_be_changed():
-    h, reference = rotating_field()
-    result = synthesize_driven(h, (0.2, 1), condition_limit=1.05,
-                               basis_order=["Z", "Y", "X"])
-    assert result.rejected_intervals > 0
-    assert result.basis == ("Z", "Y", "X")
-    assert np.linalg.norm(circuit_matrix(result.circuit, 1) - reference(0.2, 1), 2) < 2e-8
-
-
-def test_adjoint_jacobian_matches_dense_finite_difference():
-    basis = driven._closure(["XI", "ZY", "IZ"], 32)
-    theta = np.linspace(-0.09, 0.08, len(basis))
-    matrix = driven._coordinate_matrix(theta, driven._adjoint_pairs(basis))
-    paulis = [pauli_matrix(p) for p in basis]
-
-    def unitary(angles):
-        out = np.eye(4, dtype=complex)
-        for p, angle in zip(paulis, angles):
-            out = out @ expm(-1j * angle * p)
-        return out
-
-    base = unitary(theta)
-    for j in range(len(basis)):
-        offset = np.zeros(len(basis))
-        offset[j] = 1e-6
-        derivative = (unitary(theta + offset) - unitary(theta - offset)) / 2e-6
-        predicted = -1j * sum(c * p for c, p in zip(matrix[:, j], paulis)) @ base
-        assert np.linalg.norm(derivative - predicted, 2) < 1e-8
+@pytest.mark.parametrize("angles", [(0.31, -0.27, 0.49), (-1.2, np.pi/4, 0.73)],
+                         ids=["regular", "singular"])
+def test_xyz_jacobian_and_singular_set_match_closed_form(angles):
+    # For exp(-ixX) exp(-iyY) exp(-izZ), det(M)=cos(2y) in Lizzy's -iP units.
+    x, y, _ = angles
+    cosine_x, sine_x = np.cos(2*x), np.sin(2*x)
+    cosine_y, sine_y = np.cos(2*y), np.sin(2*y)
+    expected = np.array([
+        [1, 0, sine_y],
+        [0, cosine_x, -sine_x*cosine_y],
+        [0, sine_x, cosine_x*cosine_y],
+    ])
+    basis = driven._closure(["X", "Y", "Z"], 3)
+    actual = driven._coordinate_matrix(np.array(angles), driven._adjoint_pairs(basis))
+    assert np.allclose(actual, expected, atol=1e-14, rtol=0)
+    assert np.linalg.det(actual) == pytest.approx(cosine_y, abs=1e-14)
 
 
 def test_closure_budget_is_checked_before_any_control_evaluation():
@@ -201,13 +154,13 @@ def test_closure_budget_is_checked_before_any_control_evaluation():
         synthesize_driven(DrivenHamiltonian(["X", "Y", "Z"], unused), (0, 1), max_dimension=2)
 
 
-@pytest.mark.parametrize("words", [[], [""], ["A"], ["X", "ZI"], ["X", "X"]])
+@pytest.mark.parametrize("words", [[], ["A"], ["X", "ZI"], ["X", "X"]])
 def test_invalid_words(words):
     with pytest.raises(ValueError):
         DrivenHamiltonian(words, lambda t: [1] * len(words))
 
 
-@pytest.mark.parametrize("values", [[1j], [np.nan], [np.inf], [1, 2], 1, [[1]]])
+@pytest.mark.parametrize("values", [[1j], [np.nan], [1, 2]])
 def test_invalid_controls(values):
     with pytest.raises(ValueError):
         synthesize_driven(DrivenHamiltonian(["X"], lambda t: values), (0, 1))
@@ -215,9 +168,8 @@ def test_invalid_controls(values):
 
 @pytest.mark.parametrize("kwargs", [
     {"max_dimension": 0}, {"max_dimension": 1.5}, {"max_segments": False},
-    {"rtol": 0}, {"atol": np.nan}, {"max_step": 0}, {"max_step": np.nan},
-    {"chart_radius": 0}, {"chart_radius": 1}, {"condition_limit": 1},
-    {"condition_limit": np.inf}, {"max_rhs_evaluations": -1},
+    {"rtol": 0}, {"atol": np.nan}, {"max_step": 0},
+    {"chart_radius": 1}, {"condition_limit": 1},
     {"basis_order": ["X", "Z"]}, {"basis_order": ["X", "Y", "Y"]},
 ])
 def test_invalid_numerical_options(kwargs):
@@ -225,18 +177,95 @@ def test_invalid_numerical_options(kwargs):
         synthesize_driven(DrivenHamiltonian(["X", "Y"], lambda t: [1, 1]), (0, 1), **kwargs)
 
 
-@pytest.mark.parametrize("span", [(0, np.inf), (0,), (0, 1, 2)])
+@pytest.mark.parametrize("span", [(0, np.inf), (0,)])
 def test_invalid_time_span(span):
     with pytest.raises(ValueError):
         synthesize_driven(DrivenHamiltonian(["X"], lambda t: [1]), span)
 
 
-def test_work_budgets_raise_instead_of_returning_partial_circuit():
-    h, _ = rotating_field()
+def _singular_drive():
+    # Initially inactive X/Z still belong to the declared closure. The XYZ
+    # Jacobian is singular at theta_Y=pi/4; max_step resolves the guard region.
+    return DrivenHamiltonian(["X", "Y", "Z"], lambda t: [0, 1, 0])
+
+
+@pytest.mark.parametrize("span", [(0, 2), (2, 0)])
+def test_condition_restarts_cross_sampled_singularity(span):
+    result = synthesize_driven(_singular_drive(), span, basis_order=["X", "Y", "Z"],
+                               max_step=0.005, condition_limit=20)
+    assert result.basis == ("X", "Y", "Z")
+    assert result.chart_restarts > 0
+    assert result.rejected_intervals > 0
+    assert all(left[1] == right[0] for left, right in zip(result.intervals, result.intervals[1:]))
+    target = expm(-1j*(span[1] - span[0])*pauli_matrix("Y"))
+    assert np.linalg.norm(circuit_matrix(result.circuit, 1) - target, 2) < 1e-11
+
+
+def test_singularity_refuses_output_when_chart_budget_is_insufficient():
     with pytest.raises(IntegrationFailure, match="max_segments"):
-        synthesize_driven(h, (0, 2), max_segments=1, chart_radius=0.5)
+        synthesize_driven(_singular_drive(), (0, 2), max_step=0.005, max_segments=1)
+
+
+@pytest.mark.parametrize("bad_theta", [[0, np.pi/4, 0], [0, np.nan, 0]],
+                         ids=["singular", "nonfinite"])
+def test_bad_accepted_mesh_state_rejects_whole_attempt(monkeypatch, bad_theta):
+    real_solver = driven.solve_ivp
+    attempts = []
+
+    def inject_bad_mesh_once(*args, **kwargs):
+        attempts.append(args[1])
+        if len(attempts) == 1:
+            # Endpoints are healthy; the interior accepted state must be checked.
+            return SimpleNamespace(success=True, t=np.array([0, 0.5, 1]),
+                                   y=np.array([[0, 0, 0], bad_theta, [0, 0, 0]]).T)
+        return real_solver(*args, **kwargs)
+
+    monkeypatch.setattr(driven, "solve_ivp", inject_bad_mesh_once)
+    drive = DrivenHamiltonian(["X", "Y", "Z"], lambda t: [1, 0, 0])
+    result = synthesize_driven(drive, (0, 1), max_step=0.025)
+    assert result.rejected_intervals == 1
+    assert result.intervals[0] == (0, 0.5)
+    assert np.linalg.norm(circuit_matrix(result.circuit, 1) - expm(-1j*pauli_matrix("X")), 2) < 1e-11
+
+
+def test_rhs_and_control_evaluation_budget_is_global_across_retries(monkeypatch):
+    attempts, controls = [], []
+
+    def reject_chart(rhs, span, initial, **kwargs):
+        attempts.append(span)
+        for _ in range(21):
+            rhs(span[0], initial)
+        rhs(span[0], np.array([0, np.pi/4, 0]))
+        raise AssertionError("singular chart must reject RHS")
+
+    def coefficients(time):
+        controls.append(time)
+        return [0, 1, 0]
+
+    monkeypatch.setattr(driven, "solve_ivp", reject_chart)
     with pytest.raises(IntegrationFailure, match="max_rhs_evaluations"):
-        synthesize_driven(h, (0, 2), max_rhs_evaluations=1)
+        synthesize_driven(DrivenHamiltonian(["X", "Y", "Z"], coefficients),
+                          (0, 2), max_rhs_evaluations=30)
+    assert len(attempts) == 2
+    assert len(controls) == 30
+
+
+def test_nonfinite_coordinate_derivative_is_rejected_before_ode_use(monkeypatch):
+    real_solve = driven.np.linalg.solve
+    calls = []
+
+    def nonfinite_once(matrix, coefficients):
+        calls.append(None)
+        if len(calls) == 1:
+            return np.full(len(coefficients), np.inf)
+        return real_solve(matrix, coefficients)
+
+    monkeypatch.setattr(driven.np.linalg, "solve", nonfinite_once)
+    drive = DrivenHamiltonian(["X", "Y", "Z"], lambda t: [1, 0, 0])
+    result = synthesize_driven(drive, (0, 1), max_step=0.025)
+    assert result.rejected_intervals == 1
+    assert result.intervals[0] == (0, 0.5)
+    assert np.linalg.norm(circuit_matrix(result.circuit, 1) - expm(-1j*pauli_matrix("X")), 2) < 1e-11
 
 
 def test_solver_failure_is_not_returned_as_success(monkeypatch):

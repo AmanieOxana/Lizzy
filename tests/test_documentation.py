@@ -1,0 +1,62 @@
+"""Keep the quick start executable and public documentation navigable."""
+
+import json
+import re
+import xml.etree.ElementTree as ET
+from collections import Counter
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_getting_started_python_examples_run():
+    source = (ROOT / "docs/getting_started.md").read_text()
+    examples = re.findall(r"```python\n(.*?)```", source, re.DOTALL)
+    assert examples, "Getting started must retain an executable quick start"
+    for index, code in enumerate(examples, 1):
+        exec(compile(code, f"getting_started.md example {index}", "exec"), {})
+
+
+def test_local_documentation_links_resolve():
+    documents = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md")),
+                 *sorted((ROOT / "experiments").glob("*.md"))]
+    missing = []
+    for document in documents:
+        for target in re.findall(r"\[[^\]]*\]\(([^)]+)\)", document.read_text()):
+            target = urlsplit(target)
+            if target.scheme or target.netloc or not target.path:
+                continue
+            if not (document.parent / unquote(target.path)).exists():
+                missing.append(f"{document.relative_to(ROOT)}: {target.path}")
+    assert not missing, "Missing documentation targets:\n" + "\n".join(missing)
+
+
+def test_compiler_overview_retains_all_targets_and_accessible_formats():
+    record = json.loads((ROOT / "experiments/compiler_comparison_results.json").read_text())
+    rows = {(row["case"], row["method"]): row for row in record["rows"] if row["epsilon"] == 1e-6}
+    svg = ET.parse(ROOT / "docs/figures/compiler-comparison.svg").getroot()
+    elements = {element.get("id"): element for element in svg.iter() if element.get("id")}
+    assert all(label in elements for label in svg.attrib["aria-labelledby"].split())
+    description = elements["compiler-comparison-desc"].text
+    assert "same compiled circuits" in description
+    assert "without increasing T or CX" in description
+    for method, label in {
+        "qiskit-pf": "Qiskit formulas", "flagsynth-sdm": "FlagSynth SDM*",
+        "qiskit-qsd": "Qiskit QSD", "pytket": "pytket", "bqskit": "BQSKit",
+    }.items():
+        for metric, unit in (("t_count", "T"), ("cx_count", "CX")):
+            counts = Counter()
+            for case in record["cases"]:
+                ours, theirs = rows[case["name"], "lizzy-auto"], rows[case["name"], method]
+                if ours["status"] != "PASS" or theirs["status"] != "PASS":
+                    counts["missing"] += 1
+                else:
+                    counts[(ours[metric] > theirs[metric]) - (ours[metric] < theirs[metric])] += 1
+            assert sum(counts.values()) == len(record["cases"])
+            assert (
+                f"Against {label}: Lizzy fewer {unit} on {counts[-1]}, equal on {counts[0]}, "
+                f"more on {counts[1]}, no valid pair on {counts['missing']}"
+            ) in description
+    with (ROOT / "docs/figures/compiler-comparison.png").open("rb") as raster:
+        assert raster.read(8) == b"\x89PNG\r\n\x1a\n"

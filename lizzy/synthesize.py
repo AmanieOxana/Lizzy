@@ -1,16 +1,17 @@
 """
     The top-level route: classify, reduce, and price every feasible way out.
 
-    Nothing here decides anything the classification cannot justify. Each step either
-    removes work exactly -- summand splitting, the free part -- or sizes a product
-    formula from a bound it can defend. The sampled branch is the exception and is off
-    by default; see :func:`synthesize`.
+    Algebraic eligibility, bounded free-part search, and emission-cost heuristics
+    select among exact and product-formula candidates. Deterministic bound-sized
+    formulas retain an error-budget contract; fixed steps, calibration, sampling,
+    and the explicit numerical route do not. See :func:`synthesize`.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from numpy.linalg import LinAlgError
 from paulie.common.pauli_string_linear import PauliStringLinear
 
 from lizzy import exact, trotter
@@ -20,6 +21,7 @@ from lizzy.emit import (
     best_emission,
     emission_candidates,
     greedy_emission_quote,
+    native_emission_candidates,
     shared_frame_candidate,
 )
 from lizzy.hamiltonian import (
@@ -39,7 +41,32 @@ if TYPE_CHECKING:
 
 # What an exact-branch attempt can raise when the classification admits an algebra but
 # the upstream irrep machinery cannot realize this particular generator set in it.
-_EXACT_FAILURES = (StopIteration, NotImplementedError, ValueError)
+_EXACT_FAILURES = (StopIteration, NotImplementedError, ValueError, LinAlgError)
+# Gaussian decomposition itself stays polynomial. Only the optional comparison
+# with the existing DLA/formula portfolio is bounded by this fixed resource cap.
+_GAUSSIAN_COMPARE_MAX_MODES = 8
+
+
+@dataclass(frozen=True)
+class TCountSelection:
+    """Actual full-circuit costs at one common rotation-approximation budget.
+
+    BDI's gauge search uses an estimate, but the final choice includes the
+    unchanged reference compiled with the same backend and error policy.
+    Shared frames may replace the previous T-only winner only without increasing
+    either T or CX. The chosen output minimizes (T, CX) within that constraint,
+    not over all reported candidates or all possible decompositions.
+    ``rotation_error`` does not certify floating-point algebraic decomposition
+    error or implement a controlled circuit's global phase.
+    """
+
+    candidate_t_counts: tuple[tuple[str, int], ...]
+    selected: str
+    rotation_error: float
+    bdi_optimizations: tuple = ()
+    rejected_candidates: tuple[tuple[str, str], ...] = ()
+    candidate_cx_counts: tuple[tuple[str, int], ...] = ()
+    no_regression_reference: str | None = None
 
 
 @dataclass
@@ -49,38 +76,60 @@ class Result:
 
     Attributes:
         circuit (Circuit): The rotations implementing the evolution.
-        algebra (str): PauLie's name for the DLA of the whole Hamiltonian.
-        summands (int): Number of parts the Hamiltonian split into.
+        algebra (str): PauLie's DLA name, or an explicit structural/unclassified
+            label when the route avoids DLA classification.
+        summands (int): Number of parts compiled by the route. Direct Gaussian
+            delegation treats the whole input as one part without splitting.
         symmetries (int): Independent Z2 symmetries found, i.e. qubits tapering could
-            remove.
+            remove; ``None`` when a delegated route did not calculate them.
         clusters (int): Commuting groups in the part that had the most of them,
-            counted whichever route that part ended up taking.
+            counted whichever route that part ended up taking; ``None`` when not calculated.
         routes (list[str]): Which branches were used.
         randomized (bool): True if any part was sampled, in which case the requested
             error is not guaranteed for the returned circuit or channel.
         error_guaranteed (bool): Whether the selected deterministic route retains the
             requested error-budget contract. Fixed-step, calibrated and qDRIFT
-            formulas are false; exact routes remain true.
+            formulas are false; BDI/Givens exact routes remain true. Gaussian and
+            Clifford+T results are false because numerical reconstruction is not
+            a certified total error bound. This is not an absolute global-phase
+            guarantee: the static orthogonal routes can change that phase.
         routing_estimated (bool): True when at least one oversized route was compared
             using the 1/2/4-repetition cost model instead of full materialization.
-        emission (EmissionQuote, optional): The concrete backend artifact selected for
-            the complete folded circuit. The logical Pauli sequence remains in
-            ``circuit`` for provenance and verification.
+        emission (EmissionQuote, optional): The selected quote for the complete
+            folded circuit. The builtin quote retains logical rotations and an
+            analytical block cost; native/pytket quotes retain concrete gates.
+            ``emission_is_concrete`` distinguishes these cases. The logical Pauli
+            sequence remains in ``circuit`` for provenance and verification.
         numerical (WeiNormanResult, optional): Diagnostics for the explicitly
             requested numerical Wei–Norman route, otherwise ``None``.
+        t_selection (TCountSelection, optional): Actual reference/candidate T/CX
+            counts, no-regression reference and gauge diagnostics for ``objective='t'``. Its
+            rotation budget is not an end-to-end numerical error certificate.
+        routing_notes (tuple[str, ...]): Skipped optional comparisons or dependency
+            diagnostics. A delegated Gaussian result does not calculate DLA,
+            symmetry or clustering diagnostics; their counts are ``None``.
     """
 
     circuit: Circuit
     algebra: str = ""
     summands: int = 0
-    symmetries: int = 0
-    clusters: int = 0
+    symmetries: int | None = 0
+    clusters: int | None = 0
     routes: list[str] = field(default_factory=list)
     randomized: bool = False
     error_guaranteed: bool = True
     routing_estimated: bool = False
     emission: EmissionQuote | None = None
     numerical: "WeiNormanResult | None" = None
+    t_selection: TCountSelection | None = None
+    routing_notes: tuple[str, ...] = ()
+
+    @property
+    def t_count(self) -> int | None:
+        """Actual T + T-dagger count, or None for an arbitrary-rotation output."""
+        if self.emission is None:
+            return None
+        return getattr(self.emission.circuit, "t_count", None)
 
     @property
     def logical_two_qubit_gates(self) -> int:
@@ -89,10 +138,15 @@ class Result:
 
     @property
     def two_qubit_gates(self) -> int:
-        """int: Actual two-qubit count of the selected complete emission."""
+        """int: Selected gate count, or analytical block cost without concrete gates."""
         if self.emission is None:
             return self.logical_two_qubit_gates
         return self.emission.two_qubit_gates
+
+    @property
+    def emission_is_concrete(self) -> bool:
+        """Whether ``two_qubit_gates`` counts a retained emitted gate artifact."""
+        return self.emission is not None and self.emission.is_concrete
 
     @property
     def emission_backend(self) -> str:
@@ -103,7 +157,7 @@ class Result:
 
     @property
     def emitted_circuit(self) -> object:
-        """The selected backend artifact; ``circuit`` remains the logical sequence."""
+        """Selected artifact, possibly logical; inspect ``emission_is_concrete``."""
         return self.circuit if self.emission is None else self.emission.circuit
 
 
@@ -119,6 +173,7 @@ class _Plan:
     builder: Callable[[], Circuit] | None = None
     width: int | None = None
     used_estimates: bool = False
+    exhausted: bool = False
 
     @property
     def cost(self) -> int:
@@ -141,6 +196,8 @@ class _Plan:
     def exhaust(self) -> "_Plan":
         """Run the slower emission backend on a materialized shortlisted route."""
         plan = self.materialize()
+        if plan.exhausted:
+            return plan
         if plan.circuit is None or plan.width is None:
             raise RuntimeError("materialized synthesis plan lost its circuit")
         direct_was_eligible = any(
@@ -154,6 +211,7 @@ class _Plan:
             plan.emissions,
             key=lambda quote: quote.two_qubit_gates,
         )
+        plan.exhausted = True
         return plan
 
 
@@ -169,11 +227,17 @@ def synthesize(
     *,
     method: str = "auto",
     numerical_options: dict | None = None,
+    objective: str = "cx",
 ) -> Result:
     r"""
     Synthesize :math:`e^{-itH}` for a Pauli Hamiltonian.
 
-    ``method='auto'`` retains the established static router and its error contract.
+    ``method='auto'`` compares BDI and Givens within the static router while
+    retaining its error contract. Exact choices are reported in ``routes``.
+    A genuine Jordan--Wigner quadratic input also receives an optional whole-input
+    OpenFermion Gaussian candidate, including pairing. Above eight fermionic modes,
+    an available Gaussian candidate is delegated directly before DLA work;
+    ``routing_notes`` records the skipped cost comparison, not a cheapest claim.
     ``method='wei-norman'`` explicitly requests numerical Lie-coordinate synthesis
     and concrete phase-preserving native gate emission. That route does NOT promise
     the ``error`` budget: ``numerical_options`` passes local tolerances and resource
@@ -181,20 +245,55 @@ def synthesize(
     ``result.numerical`` and ``error_guaranteed`` is always false. Product-formula
     controls cannot be combined with the explicit numerical route.
 
-    Every manageable candidate the classification allows is priced per part and the
-    cheapest circuit wins -- exactness is not a priority order:
+    ``method='givens'`` and ``method='bdi'`` explicitly select the supported
+    small-orthogonal-algebra exact synthesis methods. They split commuting
+    summands and reject unsupported parts instead of falling back to another
+    route or competing with product formulas. Both guarantee at least equivalence
+    up to global phase; a horizontal BDI plan additionally preserves the logical
+    circuit's phase (see ``prepare_bdi``). Neither accepts product-formula controls
+    or ``numerical_options``. Their
+    emitted gate counts retain the same logical/concrete distinction as auto.
 
-    * an exact decomposition, where the algebra is small and orthogonal, at a depth
+    ``method='gaussian'`` explicitly delegates full-unitary JW-quadratic evolution
+    to OpenFermion, without DLA classification or a fixed-particle-number/state
+    restriction. It rejects interacting terms and needs the optional Gaussian
+    dependency. No terms are silently discarded to make an input quadratic.
+    Its checked floating-point residual is not a certified ``error`` bound, so
+    ``error_guaranteed`` is false for a selected Gaussian route under either objective.
+
+    ``objective='t'`` is an opt-in fault-tolerant path. With ``method='auto'``
+    it compares complete BDI, Givens and eligible Gaussian circuits at one total
+    rotation budget;
+    it does not fall back to product formulas or numerical Wei--Norman. BDI
+    searches legal nullspace gauges using the same paper
+    recursion, then compares the optimized and unchanged complete circuits by
+    actual Clifford+T count. Givens provides a reference without a gauge search.
+    The optional ``ft`` extra supplies arbitrary-angle synthesis. Here ``error``
+    budgets rotation approximation only; ``error_guaranteed`` is false because
+    floating-point decomposition errors are not interval-certified. The emitted
+    artifact retains phase metadata, which is not a synthesized controlled phase.
+    The original stable T-only ladder winner remains a reference. Bounded shared
+    Clifford frames are then compared by actual (T, CX), allowing no increase
+    in either count relative to that reference. Equal pairs retain stable route
+    order. Explicit methods stay within the requested algorithm. Numerical
+    Wei--Norman is not T-optimized.
+
+    In auto mode, every manageable candidate the classification allows is priced
+    per part and the cheapest quote wins -- exactness is not a priority order:
+
+    * BDI and Givens exact decompositions, where supported, at a depth
       that does not grow with ``time``;
-    * a hybrid, taking the largest exactly-compilable subset out and carrying it as
+    * a hybrid, greedily taking an exactly-compilable subset out and carrying it as
       one more summand inside each step;
     * a product formula -- either the requested order sized by the chain bound, or
       the second-order formula over commuting clusters sized by the collected
       cluster bound (route ``trotter2``).
 
-    Complete folded sequences are emission-priced whenever their projected size is at
-    most 20,000 rotations. Larger losing candidates are shortlisted from one, two and
-    four repetitions; the selected route is always fully materialized and quoted.
+    Complete folded sequences are priced whenever their projected size is at most
+    20,000 rotations. Larger losing candidates are shortlisted from one, two and
+    four repetitions; the selected logical sequence is always fully materialized
+    and quoted. A builtin quote uses analytical block/ladder costs, while native
+    and pytket quotes count concrete gates (see ``result.emission_is_concrete``).
 
     With ``randomized=True`` the remainder is additionally split by coefficient
     magnitude and its small terms are sampled rather than stepped through.
@@ -223,15 +322,24 @@ def synthesize(
         records whether anything was actually sampled; ``error_guaranteed`` and
         ``routing_estimated`` distinguish accuracy from cost-model status.
     """
-    if method not in {"auto", "wei-norman"}:
-        raise ValueError("method must be 'auto' or 'wei-norman'")
+    if method not in {"auto", "wei-norman", "givens", "bdi", "gaussian"}:
+        raise ValueError("method must be 'auto', 'wei-norman', 'givens', 'bdi', or 'gaussian'")
+    if objective not in {"cx", "t"}:
+        raise ValueError("objective must be 'cx' or 't'")
+    if objective == "t" and method == "wei-norman":
+        raise ValueError("objective='t' requires method='auto', 'bdi', 'givens', or 'gaussian'")
     if numerical_options is not None and not isinstance(numerical_options, dict):
         raise TypeError("numerical_options must be a dict or None")
+    if (method != "auto" or objective == "t") and (
+        steps is not None or randomized or calibration != 1.0 or order != 4 or seed is not None
+    ):
+        raise ValueError(
+            f"product-formula controls cannot be used with method='{method}', "
+            f"objective='{objective}'"
+        )
     if method == "wei-norman":
         from lizzy.wei_norman import synthesize_wei_norman
 
-        if steps is not None or randomized or calibration != 1.0 or order != 4 or seed is not None:
-            raise ValueError("product-formula controls cannot be used with method='wei-norman'")
         compiled = synthesize_wei_norman(hamiltonian_, time, **(numerical_options or {}))
         return Result(
             circuit=compiled.circuit,
@@ -245,6 +353,54 @@ def synthesize(
         )
     if numerical_options is not None:
         raise ValueError("numerical_options requires method='wei-norman'")
+    width = n_qubits(hamiltonian_)
+    gaussian_circuit, gaussian_failure = None, None
+    if method in {"auto", "gaussian"}:
+        from lizzy import gaussian
+
+        if method == "gaussian" or gaussian.is_gaussian(hamiltonian_):
+            try:
+                # OpenFermion has numerical near-zero decisions. Reject any
+                # resulting algebra residual that is material at this requested
+                # precision; this screening is not an interval certificate.
+                gaussian_circuit = gaussian.decompose(
+                    hamiltonian_, time, error_tolerance=min(1e-8, 0.1 * error),
+                )
+            except (*_EXACT_FAILURES, ImportError) as exc:
+                if method == "gaussian":
+                    raise
+                if width > _GAUSSIAN_COMPARE_MAX_MODES and not isinstance(exc, ImportError):
+                    raise ValueError(
+                        f"Gaussian synthesis failed for {width} modes: {exc}. "
+                        "Automatic DLA fallback was not attempted above the fixed "
+                        f"{_GAUSSIAN_COMPARE_MAX_MODES}-mode comparison cap; "
+                        "choose an explicit alternative method to attempt it."
+                    ) from exc
+                gaussian_failure = exc
+
+    if gaussian_circuit is not None and (
+        method == "gaussian" or width > _GAUSSIAN_COMPARE_MAX_MODES
+    ):
+        result = Result(
+            circuit=gaussian_circuit, algebra="JW quadratic (Gaussian)",
+            summands=1, symmetries=None, clusters=None, routes=["exact-gaussian"],
+            error_guaranteed=False,
+        )
+        if method == "auto":
+            result.routing_notes = (
+                f"Gaussian delegation: {width} modes exceeds the fixed "
+                f"{_GAUSSIAN_COMPARE_MAX_MODES}-mode DLA/formula comparison cap; "
+                "alternative costs were not compared.",
+            )
+        if objective == "t":
+            return _t_exact_result(
+                result, [], time, width, error, method,
+                gaussian_circuit=gaussian_circuit, compare_orthogonal=False,
+            )
+        result.circuit = fold_phases(gaussian_circuit, tolerance=0.0)
+        result.emission = _gaussian_emission(result.circuit, width)
+        return result
+
     parts = summands(hamiltonian_)
     terms_count = len(terms_of(hamiltonian_))
     # Naming the algebra is reporting, not routing, and classification at dense sizes
@@ -257,7 +413,35 @@ def synthesize(
         else f"(unclassified, {terms_count} terms)",
         summands=len(parts),
         symmetries=len(z2_symmetries(hamiltonian_)),
+        routing_notes=(
+            (f"Gaussian candidate unavailable: {type(gaussian_failure).__name__}: {gaussian_failure}",)
+            if gaussian_failure is not None else ()
+        ),
     )
+
+    if objective == "t":
+        return _t_exact_result(
+            result, parts, time, width, error, method,
+            gaussian_circuit=gaussian_circuit, gaussian_failure=gaussian_failure,
+        )
+
+    if method in {"givens", "bdi"}:
+        for index, part in enumerate(parts):
+            # BDI validates its graph-derived embedding itself, including
+            # nonhorizontal inputs. Givens retains its narrower legacy filter.
+            if method == "givens" and not exact.is_decomposable(part):
+                raise NotImplementedError(
+                    f"method='{method}' requires supported so(m) summands; "
+                    f"summand {index + 1} is not eligible for exact synthesis"
+                )
+        route = f"exact-{method}"
+        for part in parts:
+            result.circuit.extend(exact.decompose(part, time, route=route, method=method))
+            result.clusters = max(result.clusters, len(commuting_clusters(part)))
+        result.circuit = fold_phases(result.circuit)
+        result.emission = best_emission(result.circuit, n_qubits(hamiltonian_))
+        result.routes = [route]
+        return result
 
     for part in parts:
         _synthesize_part(
@@ -282,16 +466,187 @@ def synthesize(
         result.emission = EmissionQuote(
             "builtin", result.circuit.two_qubit_gates, result.circuit
         )
+    selected_gaussian = False
+    if gaussian_circuit is not None:
+        # Compare complete artifacts: separate Gaussian eigensystems per
+        # commuting component would miss whole-input simplifications.
+        try:
+            logical = fold_phases(gaussian_circuit, tolerance=0.0)
+            emitted = _gaussian_emission(logical, width)
+        except _EXACT_FAILURES as exc:
+            result.routing_notes += (
+                f"Gaussian emission rejected: {type(exc).__name__}: {exc}",
+            )
+        else:
+            if emitted.two_qubit_gates < result.two_qubit_gates:
+                result.circuit, result.emission = logical, emitted
+                result.randomized = False
+                selected_gaussian = True
     result.routes = sorted(set(result.circuit.provenance))
-    exact_only = set(result.routes).issubset({"exact"})
-    result.error_guaranteed = not result.randomized and (
+    exact_only = set(result.routes).issubset({"exact-bdi", "exact-givens", "exact-gaussian"})
+    result.error_guaranteed = not selected_gaussian and not result.randomized and (
         exact_only or (steps is None and calibration <= 1.0)
     )
     return result
 
 
+def _gaussian_emission(circuit, width) -> EmissionQuote:
+    """Retain a concrete phase-preserving Gaussian artifact without an SDK.
+
+    The optional pytket Pauli-box adapter drops scalar phases. Gaussian evolution
+    retains them, so use the same native ladder/frame choices as the numerical
+    phase-preserving route, rather than a logical-only quote or a phase-losing SDK.
+    """
+    # Shared frames remain optional; a valid ladder survives known frame errors.
+    candidates = native_emission_candidates(circuit, width, frame_failures=_EXACT_FAILURES)
+    backend, emitted = min(candidates, key=lambda item: (item[1].two_qubit_gates, len(item[1].gates)))
+    return EmissionQuote(backend, emitted.two_qubit_gates, emitted)
+
+
+def _t_exact_result(
+    result, parts, time, width, error, method, *, gaussian_circuit=None,
+    gaussian_failure=None, compare_orthogonal=True,
+) -> Result:
+    """Compare complete exact candidates at one total rotation-error budget.
+
+    Components are never priced independently: allocation and cancellations can
+    change their costs when joined. Auto compares uniform BDI/Givens circuits,
+    the BDI gauge variant and an eligible whole-input Gaussian circuit, not every
+    mixed component assignment.
+    """
+    import math
+
+    from lizzy.clifford_t import compile_clifford_t, compile_frame_candidates
+
+    if isinstance(error, bool) or not math.isfinite(error) or not 0 < error < 1:
+        raise ValueError("T synthesis error must be finite and between zero and one")
+    methods = (("bdi", "givens") if compare_orthogonal else ()) if method == "auto" else (method,)
+    if method == "auto" and gaussian_circuit is not None:
+        methods += ("gaussian",)
+    candidates = []
+    diagnostics = []
+    rejected = []
+    failures = []
+
+    def reject(label, exc):
+        rejected.append((label, f"{type(exc).__name__}: {exc}"))
+        failures.append(exc)
+
+    if gaussian_failure is not None:
+        reject("gaussian-reference", gaussian_failure)
+    if method == "auto" and not compare_orthogonal:
+        rejected.extend((f"{algorithm}-reference", "Skipped: fixed Gaussian comparison resource cap")
+                        for algorithm in ("bdi", "givens"))
+
+    def compile_candidate(label, logical, route, *, optional):
+        # No uncharged tolerance-based deletion in the T path. Approximation
+        # of every surviving rotation, including tiny angles, is accounted for.
+        logical = fold_phases(logical, tolerance=0.0)
+        try:
+            emitted = compile_clifford_t(logical, width, error=error)
+        except (ValueError, ImportError, LinAlgError) as exc:
+            if not optional:
+                raise
+            reject(label, exc)
+        else:
+            candidates.append((label, logical, emitted, route))
+
+    for algorithm in methods:
+        route = f"exact-{algorithm}"
+        label = f"{algorithm}-reference" if method == "auto" else "reference"
+        reference = Circuit()
+        try:
+            if algorithm == "gaussian":
+                if gaussian_circuit is None:
+                    raise NotImplementedError("No Gaussian candidate was constructed")
+                reference = gaussian_circuit
+            elif algorithm == "bdi":
+                plans = [exact.prepare_bdi(part) for part in parts]
+                for plan in plans:
+                    reference.extend(plan.circuit(time, route=route))
+            else:
+                for index, part in enumerate(parts):
+                    if not exact.is_decomposable(part):
+                        raise NotImplementedError(
+                            "method='givens' requires supported so(m) summands; "
+                            f"summand {index + 1} is not eligible for exact synthesis"
+                        )
+                    reference.extend(exact.decompose(part, time, route=route, method=algorithm))
+        except _EXACT_FAILURES as exc:
+            if method != "auto":
+                raise
+            reject(label, exc)
+            continue
+        compile_candidate(label, reference, route, optional=method == "auto")
+        if algorithm != "bdi":
+            continue
+
+        # Fixed per-entry precision scores gauges consistently. Actual final
+        # costs instead use the same TOTAL budget for every complete candidate.
+        precision = error / max(1, sum(plan.parameter_bound for plan in plans))
+        label = "bdi-nullspace-optimized" if method == "auto" else "nullspace-optimized"
+        optimized, has_alternative = Circuit(), False
+        try:
+            for part in parts:
+                candidate = exact.prepare_bdi(part, optimize="t", rotation_error=precision)
+                optimized.extend(candidate.circuit(time, route=route))
+                diagnostics.append(candidate.optimization)
+                has_alternative |= candidate.optimization.optimized
+        except _EXACT_FAILURES as exc:
+            # An optional gauge-search failure must not suppress its reference.
+            reject(label, exc)
+        else:
+            if has_alternative:
+                compile_candidate(label, optimized, route, optional=True)
+
+    if not candidates:
+        detail = "; ".join(f"{label}: {reason}" for label, reason in rejected)
+        unavailable = next((exc for exc in failures if isinstance(exc, ImportError)), None)
+        if unavailable is not None:
+            raise ImportError(f"No exact T candidate could be compiled. {detail}") from unavailable
+        if failures and all(isinstance(exc, NotImplementedError) for exc in failures):
+            raise NotImplementedError(f"No supported exact T synthesis route. {detail}")
+        raise ValueError(f"No exact T candidate passed numerical compilation. {detail}")
+
+    # Freeze the former T-only winner before expanding the emission portfolio.
+    # A local per-decomposition CX guard would not protect against a global
+    # route switch with a higher CX count. Both constraints apply here instead.
+    baseline = min(candidates, key=lambda candidate: candidate[2].t_count)
+    frame_cache = {}
+    for label, logical, _, route in tuple(candidates):
+        key = tuple((str(word), float(angle)) for word, angle in logical.rotations)
+        if key not in frame_cache:
+            frame_cache[key] = compile_frame_candidates(logical, width, error=error)
+        alternatives, frame_rejections = frame_cache[key]
+        candidates.extend((f"{label}/{strategy}", logical, output, route)
+                          for strategy, output in alternatives)
+        rejected.extend((f"{label}/{strategy}", reason) for strategy, reason in frame_rejections)
+    eligible = [candidate for candidate in candidates
+                if candidate[2].t_count <= baseline[2].t_count
+                and candidate[2].n_2qb_gates() <= baseline[2].n_2qb_gates()]
+    name, logical, emitted, route = min(
+        eligible, key=lambda candidate: (candidate[2].t_count, candidate[2].n_2qb_gates()),
+    )
+    result.circuit = logical
+    result.emission = EmissionQuote("clifford-t", emitted.n_2qb_gates(), emitted)
+    result.routes = [route]
+    if parts:
+        result.clusters = max(len(commuting_clusters(part)) for part in parts)
+    result.error_guaranteed = False
+    result.t_selection = TCountSelection(
+        candidate_t_counts=tuple((label, output.t_count) for label, _, output, _ in candidates),
+        selected=name,
+        rotation_error=float(error),
+        bdi_optimizations=tuple(diagnostics),
+        rejected_candidates=tuple(rejected),
+        candidate_cx_counts=tuple((label, output.n_2qb_gates()) for label, _, output, _ in candidates),
+        no_regression_reference=baseline[0],
+    )
+    return result
+
+
 def _priced_plan(circuit: Circuit, width: int, clusters: int) -> _Plan:
-    """Fold a complete candidate, then keep the cheapest exact emission as its price.
+    """Fold a complete candidate and retain its cheapest logical/concrete quote.
 
     Whichever emission is cheaper is what the candidate costs, so the emission tier
     takes part in routing rather than being applied only after it.
@@ -385,10 +740,18 @@ def _synthesize_part(
     clusters = commuting_clusters(part)
     width = n_qubits(part)
 
+    # BDI owns its broader verified mapping and resource checks; the Givens
+    # legacy eligibility filter is not a reason to suppress a BDI candidate.
+    # The outer term cap also keeps dense parts out of expensive classification.
+    algorithms = ["bdi"] if len(terms_of(part)) <= max(64, 8 * width) else []
     if exact.is_decomposable(part):
+        algorithms.append("givens")
+    for algorithm in algorithms:
         try:
-            fixed = exact.decompose(part, time, route="exact")
-            candidates.append(_priced_plan(fixed, width, len(clusters)))
+            fixed = exact.decompose(part, time, route=f"exact-{algorithm}", method=algorithm)
+            # Both bounded exact candidates receive identical emission effort;
+            # a cheap preliminary quote must not decide BDI versus Givens.
+            candidates.append(_priced_plan(fixed, width, len(clusters)).exhaust())
         except _EXACT_FAILURES:
             pass
 
@@ -524,14 +887,13 @@ def _formula_plan(part, commuting, time, error, calibration, steps):
         if count is None:
             continue
         step_time = time / count
-        build = lambda repetitions, c=clusters, b=builder, tau=step_time: (
-            trotter.cluster_formula(
+        def build(repetitions, c=clusters, b=builder, tau=step_time):
+            return trotter.cluster_formula(
                 c,
                 tau * repetitions,
                 repetitions,
                 compile_cluster=b,
             )
-        )
         plans.append(_repeated_plan(build, count, n_qubits(part), len(clusters)))
     if not plans:
         return None

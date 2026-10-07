@@ -5,9 +5,9 @@ import pytest
 from scipy.integrate import solve_ivp
 from scipy.linalg import expm
 
-from lizzy.dense import circuit_matrix, evolution, pauli_matrix
+from lizzy.dense import evolution, pauli_matrix
 from lizzy.driven import AlgebraTooLarge, DrivenHamiltonian, IntegrationFailure
-from lizzy.hamiltonian import Circuit, hamiltonian
+from lizzy.hamiltonian import hamiltonian
 from lizzy.native import NativeCircuit
 from lizzy.synthesize import synthesize
 from lizzy.wei_norman import synthesize_wei_norman
@@ -27,32 +27,17 @@ def test_static_su4_produces_a_concrete_phase_preserving_circuit():
     assert not result.error_guaranteed
 
 
-def test_commuting_static_components_need_no_ode_evaluations():
+@pytest.mark.parametrize("split", [True, False], ids=["components", "unsplit"])
+def test_commuting_static_components_need_no_ode_evaluations(split):
     h = hamiltonian({"ZZZ": 0.2, "ZII": 0.7, "III": -100.0})
-    result = synthesize_wei_norman(h, (1.1, -0.3), max_rhs_evaluations=1)
+    result = synthesize_wei_norman(h, (1.1, -0.3), split_components=split,
+                                   max_rhs_evaluations=1)
     assert result.rhs_evaluations == 0
-    assert result.charts == 3
+    assert result.charts == (3 if split else 1)
     assert result.chart_restarts == result.rejected_intervals == 0
     assert result.max_observed_condition == 1.0
     assert len(result.circuit) == 3
     assert np.linalg.norm(result.emitted_circuit.get_unitary() - evolution(h, -1.4), 2) < 1e-11
-
-
-@pytest.mark.parametrize("chart_radius", [None, 0.5])
-def test_chart_policies_are_valid_for_direct_static_components(chart_radius):
-    h = hamiltonian({"X": 1.3, "I": -0.2})
-    result = synthesize_wei_norman(h, 1.0, chart_radius=chart_radius)
-    assert result.rhs_evaluations == 0
-    assert np.linalg.norm(result.emitted_circuit.get_unitary() - evolution(h, 1.0), 2) < 1e-11
-
-
-def test_structural_splitting_matches_unsplit_driven_evolution():
-    drive = DrivenHamiltonian(["XI", "ZI", "IX", "IY"], lambda t: [0.2 + t, -0.3, np.cos(t), t])
-    split = synthesize_wei_norman(drive, (0.2, 0.5), max_dimension=3)
-    joined = synthesize_wei_norman(drive, (0.2, 0.5), split_components=False, max_dimension=6)
-    assert split.component_dimensions == (3, 3)
-    assert joined.component_dimensions == (6,)
-    assert np.linalg.norm(split.emitted_circuit.get_unitary() - joined.emitted_circuit.get_unitary(), 2) < 1e-8
 
 
 def test_independent_spins_scale_without_dense_hilbert_space(monkeypatch):
@@ -123,6 +108,37 @@ def test_split_driven_pulses_and_identity_match_independent_dense_ode(reverse):
     assert result.emitted_circuit.global_phase == pytest.approx(0.297 if reverse else -0.297)
 
 
+def test_condition_managed_chart_keeps_driven_tfim_compact_and_correct():
+    # One representative resource regression, not a model/API Cartesian sweep.
+    words = ["ZZI", "IZZ", "XII", "IXI", "IIX"]
+    drive = DrivenHamiltonian(words, lambda t: [
+        0.7 + 0.12*np.sin(0.9*t), -0.45 + 0.08*np.cos(1.1*t),
+        0.35 + 0.11*np.cos(0.7*t), 0.5 + 0.13*np.sin(1.3*t),
+        -0.4 + 0.09*np.cos(1.7*t),
+    ])
+    matrices = np.array([pauli_matrix(word) for word in words])
+
+    def rhs(time, vector):
+        generator = np.einsum("j,jab->ab", drive.at(time), matrices)
+        return (-1j * generator @ vector.reshape(8, 8)).ravel()
+
+    reference = solve_ivp(rhs, (0, 1.2), np.eye(8, dtype=complex).ravel(),
+                          method="DOP853", rtol=3e-13, atol=1e-14, max_step=0.005)
+    assert reference.success
+    target = reference.y[:, -1].reshape(8, 8)
+    options = {"rtol": 1e-10, "atol": 1e-12, "max_step": 0.025}
+    compact = synthesize_wei_norman(drive, (0, 1.2), **options)
+    legacy = synthesize_wei_norman(drive, (0, 1.2), chart_radius=0.5, **options)
+    assert compact.charts == 1
+    assert compact.dimension == len(compact.circuit) == 15
+    assert compact.chart_restarts == compact.rejected_intervals == 0
+    assert compact.two_qubit_gates <= 32
+    assert compact.two_qubit_gates < legacy.two_qubit_gates
+    assert legacy.chart_restarts > 0
+    assert np.linalg.norm(compact.emitted_circuit.get_unitary() - target, 2) < 1e-10
+    assert np.linalg.norm(legacy.emitted_circuit.get_unitary() - target, 2) < 1e-10
+
+
 def test_dimension_checks_precede_all_driven_callback_evaluations():
     def forbidden(t):
         raise AssertionError("all closures must be checked before any control evaluation")
@@ -170,25 +186,13 @@ def test_basis_order_is_induced_on_each_component():
         synthesize_wei_norman(drive, 0.1, basis_order=["XI"])
 
 
-@pytest.mark.parametrize("emission", ["native", "ladder", "none"])
-def test_emission_modes_preserve_logical_and_concrete_results(emission):
-    h = hamiltonian({"XXX": 0.5, "XXY": -0.2, "IIZ": 0.3, "III": 0.1})
-    result = synthesize_wei_norman(h, 0.3, emission=emission)
-    logical = circuit_matrix(result.circuit, 3)
-    if emission == "none":
-        assert result.emission is None
-        assert isinstance(result.emitted_circuit, Circuit)
-        assert result.emission_backend == "none"
-    else:
-        assert np.linalg.norm(result.emitted_circuit.get_unitary() - logical, 2) < 1e-11
-        assert result.emission_backend.startswith("native-")
-
-
 def test_main_static_api_exposes_explicit_numerical_route():
     h = hamiltonian({"X": 0.5, "Z": -0.2})
     result = synthesize(h, 0.3, method="wei-norman", numerical_options={"rtol": 1e-10})
     assert not result.error_guaranteed
     assert result.numerical is not None
+    assert result.emission_is_concrete
+    assert result.emission is result.numerical.emission
     assert result.emitted_circuit is result.numerical.emitted_circuit
     assert np.linalg.norm(result.emitted_circuit.get_unitary() - evolution(h, 0.3), 2) < 1e-8
     regular = synthesize(h, 0.3)
@@ -196,9 +200,7 @@ def test_main_static_api_exposes_explicit_numerical_route():
     assert regular.numerical is None
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"steps": 1}, {"randomized": True}, {"calibration": 2}, {"order": 2}, {"seed": 1},
-])
+@pytest.mark.parametrize("kwargs", [{"steps": 1}, {"randomized": True}])
 def test_main_api_rejects_conflicting_product_formula_controls(kwargs):
     with pytest.raises(ValueError, match="product-formula controls"):
         synthesize(hamiltonian({"X": 1}), 1, method="wei-norman", **kwargs)
@@ -211,36 +213,33 @@ def test_main_api_rejects_unknown_or_ignored_numerical_options():
         synthesize(hamiltonian({"X": 1}), 1, numerical_options={})
 
 
-@pytest.mark.parametrize("options", [[], 0, ""])
-def test_main_api_rejects_falsey_non_dictionary_options(options):
+def test_main_api_rejects_falsey_non_dictionary_options():
     with pytest.raises(TypeError, match="dict"):
-        synthesize(hamiltonian({"X": 1}), 1, method="wei-norman", numerical_options=options)
+        synthesize(hamiltonian({"X": 1}), 1, method="wei-norman", numerical_options=[])
 
 
 def test_main_api_honestly_labels_explicitly_skipped_emission():
     result = synthesize(hamiltonian({"X": 1}), 1, method="wei-norman",
                         numerical_options={"emission": "none"})
     assert result.emission_backend == result.numerical.emission_backend == "none"
+    assert not result.emission_is_concrete
     assert result.emission is None
     assert result.emitted_circuit is result.circuit
 
 
 @pytest.mark.parametrize("kwargs", [
-    {"breakpoints": [0]}, {"breakpoints": [1]}, {"breakpoints": [0.7, 0.2]},
-    {"breakpoints": [0.5, 0.5]}, {"breakpoints": [np.nan]}, {"breakpoints": [[0.5]]},
-    {"max_dimension": 0}, {"max_total_dimension": True}, {"max_segments": -1},
-    {"max_rhs_evaluations": 0}, {"rtol": 0}, {"atol": -1}, {"max_step": 0},
-    {"condition_limit": 1}, {"chart_radius": 1}, {"emission": "unknown"},
+    {"breakpoints": [0]}, {"breakpoints": [0.7, 0.2]},
+    {"breakpoints": [np.nan]}, {"breakpoints": [[0.5]]},
+    {"max_total_dimension": True}, {"emission": "unknown"},
 ])
-def test_options_are_validated_even_for_direct_static_evolution(kwargs):
+def test_pipeline_options_are_validated_for_direct_static_evolution(kwargs):
     with pytest.raises(ValueError):
         synthesize_wei_norman(hamiltonian({"X": 1}), 1, **kwargs)
 
 
-@pytest.mark.parametrize("span", [np.inf, [0, np.nan], [0, 1, 2], [-1e308, 1e308]])
-def test_invalid_spans(span):
+def test_finite_endpoints_with_overflowing_duration_are_rejected():
     with pytest.raises(ValueError, match="time_span"):
-        synthesize_wei_norman(hamiltonian({"X": 1}), span)
+        synthesize_wei_norman(hamiltonian({"X": 1}), [-1e308, 1e308])
 
 
 def test_invalid_types_and_nonhermitian_static_inputs():

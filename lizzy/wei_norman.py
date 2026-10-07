@@ -15,18 +15,17 @@ import numpy as np
 from paulie.common.pauli_string_factory import get_pauli_string
 from paulie.common.pauli_string_linear import PauliStringLinear
 
+from lizzy._numerical import _positive_integer, _time_span, _validate_chart_controls
 from lizzy.driven import (
     AlgebraTooLarge,
     DrivenHamiltonian,
     DrivenResult,
     IntegrationFailure,
     _closure,
-    _positive_integer,
     synthesize_driven,
 )
-from lizzy.emit import EmissionQuote
+from lizzy.emit import EmissionQuote, native_emission_candidates
 from lizzy.hamiltonian import Circuit, fold_phases
-from lizzy.native import ladder_circuit, native_frame_candidate, native_frame_circuit
 
 
 @dataclass
@@ -116,14 +115,7 @@ def _components(words: Sequence[str]) -> tuple[tuple[int, ...], ...]:
 
 
 def _time_pieces(time_span, breakpoints):
-    span = np.asarray(time_span, dtype=float)
-    if span.ndim == 0:
-        span = np.array([0.0, float(span)])
-    if span.shape != (2,) or not np.all(np.isfinite(span)):
-        raise ValueError("time_span must be a finite duration or two finite times")
-    start, end = map(float, span)
-    if not np.isfinite(end - start):
-        raise ValueError("time_span duration must be finite")
+    start, end = _time_span(time_span, allow_duration=True)
     points = np.asarray(breakpoints, dtype=float)
     if points.ndim != 1 or not np.all(np.isfinite(points)):
         raise ValueError("breakpoints must be a finite sequence in integration order")
@@ -139,11 +131,23 @@ def _time_pieces(time_span, breakpoints):
 def _emit(circuit, width, emission):
     if emission == "none":
         return None
-    candidates = [("native-ladder", ladder_circuit(circuit, width))]
-    if emission == "native" and native_frame_candidate(circuit, width):
-        candidates.append(("native-frame", native_frame_circuit(circuit, width)))
+    candidates = native_emission_candidates(circuit, width, include_frame=emission == "native")
     backend, emitted = min(candidates, key=lambda item: (item[1].two_qubit_gates, len(item[1].gates)))
     return EmissionQuote(backend, emitted.two_qubit_gates, emitted)
+
+
+def _static_segment(words, basis, values, start, end):
+    """Exact commuting evolution, with the same segment diagnostics as the ODE."""
+    with np.errstate(over="raise", invalid="raise"):
+        try:
+            angles = (end - start) * values
+        except FloatingPointError as exc:
+            raise IntegrationFailure("nonfinite static rotation angle") from exc
+    circuit = Circuit()
+    for word, angle in zip(words, angles):
+        if angle != 0:
+            circuit.add(get_pauli_string(word), float(angle), "wei-norman:commuting")
+    return DrivenResult(circuit, basis, ((start, end),), 0, 0, 1.0)
 
 
 def synthesize_wei_norman(
@@ -226,12 +230,20 @@ def synthesize_wei_norman(
             raise ValueError("basis_order must be a permutation of the full Pauli closure")
         bases = [tuple(word for word in order if word in basis) for basis in bases]
 
+    # This structural decision is independent of pulse boundaries and controls.
+    direct_groups = []
+    for group in groups:
+        paulis = [get_pauli_string(drive.paulis[j]) for j in group] if is_static else []
+        direct_groups.append(is_static and all(
+            p.commutes_with(q) for j, p in enumerate(paulis) for q in paulis[j + 1:]
+        ))
+
     options = {"max_dimension": max_dimension, "rtol": rtol, "atol": atol,
                "max_step": max_step, "chart_radius": chart_radius,
                "condition_limit": condition_limit}
     # Validate solver controls even for a zero-time or directly emitted static run.
-    probe = DrivenHamiltonian([drive.paulis[0]], lambda t: [0.0])
-    synthesize_driven(probe, (span[0], span[0]), **options)
+    _validate_chart_controls(rtol=rtol, atol=atol, max_step=max_step,
+                             chart_radius=chart_radius, condition_limit=condition_limit)
     static_values = drive.at(span[0]) if is_static else None
     circuit, segments = Circuit(), []
     evaluations, charts = 0, 0
@@ -240,7 +252,7 @@ def synthesize_wei_norman(
         interior_low, interior_high = np.nextafter(lower, upper), np.nextafter(upper, lower)
         if len(pieces) > 1 and interior_low > interior_high:
             raise IntegrationFailure("pulse interval has no representable interior time")
-        for group, basis in zip(groups, bases):
+        for group, basis, direct in zip(groups, bases, direct_groups):
             if charts >= max_segments:
                 raise IntegrationFailure("max_segments exhausted across components/pulses")
             words = tuple(drive.paulis[j] for j in group)
@@ -251,26 +263,13 @@ def synthesize_wei_norman(
                 sample = float(np.clip(time, low, high)) if len(pieces) > 1 else time
                 return drive.at(sample)[indices]
 
-            component = DrivenHamiltonian(words, coefficients)
-            if is_static and len(basis) == len(words) and all(
-                get_pauli_string(p).commutes_with(get_pauli_string(q))
-                for j, p in enumerate(words) for q in words[j + 1:]
-            ):
-                direct = Circuit()
-                with np.errstate(over="raise", invalid="raise"):
-                    try:
-                        angles = (end - start) * static_values[indices]
-                    except FloatingPointError as exc:
-                        raise IntegrationFailure("nonfinite static rotation angle") from exc
-                for word, angle in zip(words, angles):
-                    if angle != 0:
-                        direct.add(get_pauli_string(word), float(angle), "wei-norman:commuting")
-                part = DrivenResult(direct, basis, ((start, end),), 0, 0, 1.0)
+            if direct:
+                part = _static_segment(words, basis, static_values[indices], start, end)
             else:
                 if evaluations >= max_rhs_evaluations:
                     raise IntegrationFailure("max_rhs_evaluations exhausted across components/pulses")
                 part = synthesize_driven(
-                    component, (start, end), basis_order=basis,
+                    DrivenHamiltonian(words, coefficients), (start, end), basis_order=basis,
                     max_segments=max_segments - charts,
                     max_rhs_evaluations=max_rhs_evaluations - evaluations, **options,
                 )

@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg role="img" aria-labelledby="bdi-results-title bdi-results-desc" xmlns:xlink="http://www.w3.org/1999/xlink" width="835.2pt" height="482.4pt" viewBox="0 0 835.2 482.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <desc id="bdi-results-desc">41 paired targets, snapshot 2026-10-07. Ladder-only results: BDI wins 0, Givens wins 41, ties 0. The same best-of-ladder/frame portfolio gives BDI wins 9, Givens wins 28, ties 4. Median paired BDI/Givens timing ratios: preparation plus first evaluation 1.430; prepared repeat evaluation 0.139. Timing excludes folding, emission and verification; a small horizontal corpus, not a universal ranking. Source: experiments/bdi_paper_results.json. Regenerate: python docs/figures/generate.py.</desc>
+ <title id="bdi-results-title">BDI versus Givens: the trade-off</title>
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:title>BDI versus Givens: the trade-off</dc:title>
+    <dc:date>2026-10-07</dc:date>
+    <dc:description>41 paired targets, snapshot 2026-10-07. Ladder-only results: BDI wins 0, Givens wins 41, ties 0. The same best-of-ladder/frame portfolio gives BDI wins 9, Givens wins 28, ties 4. Median paired BDI/Givens timing ratios: preparation plus first evaluation 1.430; prepared repeat evaluation 0.139. Timing excludes folding, emission and verification; a small horizontal corpus, not a universal ranking. Source: experiments/bdi_paper_results.json. Regenerate: python docs/figures/generate.py.</dc:description>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Lizzy docs/figures/generate.py (Matplotlib)</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 482.4 
+L 835.2 482.4 
+L 835.2 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 221.328 209.844 
+L 793.44 209.844 
+L 793.44 94.068 
+L 221.328 94.068 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 221.328 140.3784 
+L 793.44 140.3784 
+L 793.44 110.908145 
+L 221.328 110.908145 
+z
+" clip-path="url(#pe022dd5a3e)" style="fill: #5665ad"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 221.328 193.003855 
+L 346.913561 193.003855 
+L 346.913561 163.5336 
+L 221.328 163.5336 
+z
+" clip-path="url(#pe022dd5a3e)" style="fill: #087e8b"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 346.913561 193.003855 
+L 737.624195 193.003855 
+L 737.624195 163.5336 
+L 346.913561 163.5336 
+z
+" clip-path="url(#pe022dd5a3e)" style="fill: #5665ad"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 737.624195 193.003855 
+L 793.44 193.003855 
+L 793.44 163.5336 
+L 737.624195 163.5336 
+z
+" clip-path="url(#pe022dd5a3e)" style="fill: #cbd5e1"/>
+   </g>
+   <g id="matplotlib.axis_1"/>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_1"/>
+     <g id="text_1">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: end; fill: #253449" x="209.328" y="130.962179" transform="rotate(-0 209.328 130.962179)">Ladders only</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_2"/>
+     <g id="text_2">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; fill: #253449" transform="translate(116.932375 176.812946)">Same best of</text>
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; fill: #253449" transform="translate(102.56925 192.489884)">ladder + frame</text>
+     </g>
+    </g>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #ffffff" x="507.384" y="129.506398" transform="rotate(-0 507.384 129.506398)">41</text>
+   </g>
+   <g id="text_4">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #ffffff" x="284.12078" y="182.131852" transform="rotate(-0 284.12078 182.131852)">9</text>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #ffffff" x="542.268878" y="182.131852" transform="rotate(-0 542.268878 182.131852)">28</text>
+   </g>
+   <g id="text_6">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #253449" x="765.532098" y="182.131852" transform="rotate(-0 765.532098 182.131852)">4</text>
+   </g>
+  </g>
+  <g id="axes_2">
+   <g id="patch_7">
+    <path d="M 221.328 397.0152 
+L 793.44 397.0152 
+L 793.44 298.1232 
+L 221.328 298.1232 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 221.328 333.441771 
+L 682.708645 333.441771 
+L 682.708645 309.896057 
+L 221.328 309.896057 
+z
+" clip-path="url(#p2990db62f1)" style="fill: #087e8b"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 221.328 380.5332 
+L 266.127606 380.5332 
+L 266.127606 356.987486 
+L 221.328 356.987486 
+z
+" clip-path="url(#p2990db62f1)" style="fill: #087e8b"/>
+   </g>
+   <g id="matplotlib.axis_3"/>
+   <g id="matplotlib.axis_4">
+    <g id="ytick_3">
+     <g id="line2d_3"/>
+     <g id="text_7">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; fill: #253449" transform="translate(112.277375 320.213133)">Preparation +</text>
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; fill: #253449" transform="translate(103.886125 335.890071)">first evaluation</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_4"/>
+     <g id="text_8">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; fill: #253449" transform="translate(96.593 367.304562)">Prepared repeat</text>
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; fill: #253449" transform="translate(135.690187 382.981499)">evaluation</text>
+     </g>
+    </g>
+   </g>
+   <g id="line2d_5">
+    <path d="M 543.985906 397.0152 
+L 543.985906 298.1232 
+" clip-path="url(#p2990db62f1)" style="fill: none; stroke-dasharray: 4.5,4.5; stroke-dashoffset: 0; stroke: #5665ad; stroke-width: 1.5"/>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 13px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #5665ad" x="543.985906" y="290.588571" transform="rotate(-0 543.985906 290.588571)">Givens = 1×</text>
+   </g>
+   <g id="text_10">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #087e8b" x="692.388382" y="325.532039" transform="rotate(-0 692.388382 325.532039)">1.43×</text>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #087e8b" x="275.807343" y="372.623468" transform="rotate(-0 275.807343 372.623468)">0.14×</text>
+   </g>
+  </g>
+  <g id="text_12">
+   <text style="font-weight: 700; font-size: 21px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="29.232" y="20.2608" transform="rotate(-0 29.232 20.2608)">BDI versus Givens: the trade-off</text>
+  </g>
+  <g id="text_13">
+   <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #72839b" x="29.232" y="41.9688" transform="rotate(-0 29.232 41.9688)">41 paired targets · 3–6 qubits · snapshot 2026-10-07</text>
+  </g>
+  <g id="text_14">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="29.232" y="72.8424" transform="rotate(-0 29.232 72.8424)">Which method uses fewer emitted CX gates?</text>
+  </g>
+  <g id="text_15">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="29.232" y="268.6968" transform="rotate(-0 29.232 268.6968)">Time cost depends on whether the plan is reused</text>
+  </g>
+  <g id="text_16">
+   <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="29.232" y="438.984" transform="rotate(-0 29.232 438.984)">Median paired BDI/Givens time ratios; excludes folding, emission and verification.</text>
+  </g>
+  <g id="text_17">
+   <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="29.232" y="457.3152" transform="rotate(-0 29.232 457.3152)">All artifacts verified. Generic emitters, not the paper’s specialized gate construction.</text>
+  </g>
+  <g id="legend_1">
+   <g id="patch_10">
+    <path d="M 301.151937 233.485525 
+L 317.951937 233.485525 
+L 317.951937 223.685525 
+L 301.151937 223.685525 
+z
+" style="fill: #087e8b; stroke: #087e8b; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_18">
+    <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="329.151937" y="233.485525" transform="rotate(-0 329.151937 233.485525)">BDI lower CX</text>
+   </g>
+   <g id="patch_11">
+    <path d="M 448.206625 233.485525 
+L 465.006625 233.485525 
+L 465.006625 223.685525 
+L 448.206625 223.685525 
+z
+" style="fill: #5665ad; stroke: #5665ad; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_19">
+    <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="476.206625" y="233.485525" transform="rotate(-0 476.206625 233.485525)">Givens lower CX</text>
+   </g>
+   <g id="patch_12">
+    <path d="M 618.549437 233.485525 
+L 635.349437 233.485525 
+L 635.349437 223.685525 
+L 618.549437 223.685525 
+z
+" style="fill: #cbd5e1; stroke: #cbd5e1; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_20">
+    <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="646.549437" y="233.485525" transform="rotate(-0 646.549437 233.485525)">Equal CX</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="pe022dd5a3e">
+   <rect x="221.328" y="94.068" width="572.112" height="115.776"/>
+  </clipPath>
+  <clipPath id="p2990db62f1">
+   <rect x="221.328" y="298.1232" width="572.112" height="98.892"/>
+  </clipPath>
+ </defs>
+</svg>

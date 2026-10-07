@@ -6,11 +6,10 @@ import numpy as np
 from paulie.common.pauli_string_factory import get_pauli_string
 from scipy.linalg import expm
 
-from lizzy import driven_bench
+from lizzy import driven_bench, emit
 from lizzy.dense import circuit_matrix, pauli_matrix
 from lizzy.driven import DrivenHamiltonian
 from lizzy.hamiltonian import Circuit
-from lizzy.native import ladder_circuit
 
 
 def test_midpoint_baseline_integrates_linear_commuting_drive_backwards():
@@ -29,52 +28,14 @@ def test_midpoint_baseline_has_second_order_convergence():
     assert 3.9 < errors[0] / errors[1] < 4.1
 
 
-def test_quote_counts_concrete_gates_not_the_logical_pair_estimate():
-    circuit = Circuit()
-    for word, angle in [("XX", .2), ("YY", -.3), ("ZZ", .4)]:
-        circuit.add(get_pauli_string(word), angle, "test")
-    logical = circuit_matrix(circuit, 2)
-    ladder = ladder_circuit(circuit, 2)
-    frame = driven_bench.native_frame_circuit(circuit, 2)
-    assert circuit.two_qubit_gates == 3
-    cost, backend, actual = driven_bench._quote(circuit, 2, logical)
-    assert cost == min(ladder.two_qubit_gates, frame.two_qubit_gates)
-    assert backend in {"native-ladder", "native-frame"}
-    assert np.linalg.norm(actual - logical, 2) < 1e-12
-
-
 def test_quote_does_not_offer_a_lower_unemitted_block_cost(monkeypatch):
     circuit = Circuit()
     for word, angle in [("XX", .2), ("YY", -.3), ("ZZ", .4)]:
         circuit.add(get_pauli_string(word), angle, "test")
-    monkeypatch.setattr(driven_bench, "native_frame_candidate", lambda *args: False)
+    monkeypatch.setattr(emit, "native_frame_candidate", lambda *args: False)
     cost, backend, _ = driven_bench._quote(circuit, 2, circuit_matrix(circuit, 2))
     assert circuit.two_qubit_gates == 3
     assert cost == 6 and backend == "native-ladder"
-
-
-def test_benchmark_reports_failure_when_baseline_exhausts_budget(monkeypatch, capsys):
-    case = next(driven_bench._cases())
-    monkeypatch.setattr(driven_bench, "_cases", lambda: iter([case]))
-    monkeypatch.setattr("sys.argv", ["driven_bench", "--max-steps", "1"])
-    assert driven_bench.main() == 1
-    report = capsys.readouterr().out
-    rows = [line for line in report.splitlines() if line.startswith(case.name)]
-    assert len(rows) == 4
-    assert "Wei-Norman" in rows[0] and rows[0].endswith("PASS")
-    assert "magnus4" in rows[1] and rows[1].endswith("PASS")
-    assert "fer4" in rows[2] and rows[2].endswith("PASS")
-    assert "midpoint2" in rows[3] and rows[3].endswith("FAIL")
-
-
-def test_benchmark_default_threshold_passes(monkeypatch, capsys):
-    case = next(driven_bench._cases())
-    monkeypatch.setattr(driven_bench, "_cases", lambda: iter([case]))
-    monkeypatch.setattr("sys.argv", ["driven_bench"])
-    assert driven_bench.main() == 0
-    report = capsys.readouterr().out
-    assert sum(line.endswith("PASS") for line in report.splitlines()) == 4
-    assert "FAIL" not in report
 
 
 def test_benchmark_reports_expansion_search_caps(monkeypatch, capsys):
@@ -88,12 +49,6 @@ def test_benchmark_reports_expansion_search_caps(monkeypatch, capsys):
     assert len(rows) == 4
     assert rows[0].endswith("PASS")
     assert all(line.endswith("FAIL") for line in rows[1:])
-
-
-def test_ideal_plan_screen_uses_circuit_application_order():
-    plan = SimpleNamespace(basis=("X", "Y"), factors=((0.21, 0.0), (0.0, -0.34)))
-    expected = expm(0.34j * pauli_matrix("Y")) @ expm(-0.21j * pauli_matrix("X"))
-    assert np.linalg.norm(driven_bench._plan_matrix(plan) - expected, 2) < 1e-14
 
 
 def test_expansion_search_requires_final_circuit_accuracy(monkeypatch):

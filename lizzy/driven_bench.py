@@ -16,9 +16,9 @@ from scipy.linalg import expm
 
 from lizzy.dense import circuit_matrix, pauli_matrix
 from lizzy.driven import DrivenHamiltonian, IntegrationFailure, synthesize_driven
+from lizzy.emit import native_emission_candidates
 from lizzy.expansions import expand_driven, synthesize_expansion
 from lizzy.hamiltonian import Circuit, fold_phases
-from lizzy.native import ladder_circuit, native_frame_candidate, native_frame_circuit
 
 
 @dataclass(frozen=True)
@@ -106,9 +106,7 @@ def _midpoint_formula(hamiltonian, time_span, steps):
 
 def _quote(circuit, width, logical_unitary):
     """Same fixed portfolio for all routes; verify native output before quoting."""
-    candidates = [("native-ladder", ladder_circuit(circuit, width))]
-    if native_frame_candidate(circuit, width):
-        candidates.append(("native-frame", native_frame_circuit(circuit, width)))
+    candidates = native_emission_candidates(circuit, width)
     for _, emitted in candidates:
         emitted_unitary = emitted.get_unitary()
         discrepancy = np.linalg.norm(emitted_unitary - logical_unitary, ord=2)

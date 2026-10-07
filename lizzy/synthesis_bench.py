@@ -25,7 +25,7 @@ from scipy.linalg import expm
 
 from lizzy import exact
 from lizzy.classify import summands
-from lizzy.dense import circuit_matrix, pauli_matrix
+from lizzy.dense import circuit_matrix, operator_errors, pauli_matrix
 from lizzy.driven import (
     AlgebraTooLarge,
     DrivenHamiltonian,
@@ -33,8 +33,8 @@ from lizzy.driven import (
     _closure,
 )
 from lizzy.driven_bench import _dense_reference, _midpoint_formula
+from lizzy.emit import native_emission_candidates
 from lizzy.hamiltonian import Circuit, fold_phases, hamiltonian
-from lizzy.native import ladder_circuit, native_frame_candidate, native_frame_circuit
 
 
 @dataclass(frozen=True)
@@ -128,17 +128,13 @@ def benchmark_cases():
 
 def _errors(achieved, target):
     """Strict norm and trace-phase-aligned norm (not an asserted phase optimum)."""
-    overlap = np.vdot(target, achieved)
-    phase = overlap / abs(overlap) if abs(overlap) else 1.0
-    return (float(np.linalg.norm(achieved / phase - target, 2)),
-            float(np.linalg.norm(achieved - target, 2)))
+    errors = operator_errors(achieved, target)
+    return errors["phase_aligned"], errors["strict"]
 
 
 def _emission(circuit, width):
     """Concrete, fixed portfolio: counts are from artifacts, not block estimates."""
-    candidates = [("native-ladder", ladder_circuit(circuit, width))]
-    if native_frame_candidate(circuit, width):
-        candidates.append(("native-frame", native_frame_circuit(circuit, width)))
+    candidates = native_emission_candidates(circuit, width)
     return min(candidates, key=lambda item: (item[1].two_qubit_gates, len(item[1].gates)))
 
 
@@ -272,7 +268,7 @@ def run_suite(cases=None, *, error=1e-6, max_dimension=32, max_steps=4096,
 
 def _versions():
     versions = {"python": platform.python_version()}
-    for name in ("lizzy", "numpy", "scipy", "paulie", "kak_tools", "gulps"):
+    for name in ("lizzy", "numpy", "scipy", "paulie", "kak_tools"):
         try:
             versions[name] = version(name)
         except PackageNotFoundError:
@@ -324,7 +320,8 @@ def main(argv=None):
         for case in cases:
             print(f"# {case.name}: t={case.time_span}; reference={case.reference}")
             for row in (r for r in rows if r.case == case.name):
-                number = lambda value: "-" if value is None else str(value)
+                def number(value):
+                    return "-" if value is None else str(value)
                 op = "-" if row.op_error is None else f"{row.op_error:.2e}"
                 strict = "-" if row.strict_error is None else f"{row.strict_error:.2e}"
                 print(f"{row.case:<20} {row.route:<12} {row.dimension:>2} {number(row.charts):>6} "

@@ -40,19 +40,19 @@ def classify(hamiltonian: PauliStringLinear) -> Classification:
 
 def is_fast_forwardable(classification: Classification, n_qubits: int) -> bool:
     r"""
-    Check whether the algebra is small enough to decompose exactly.
+    Apply the static router's algebra-dimension budget.
 
-    A DLA of dimension :math:`d` needs :math:`d` rotations to decompose, so the exact
-    branch pays off precisely when :math:`d` is polynomial in the qubit count rather
-    than exponential. The two cases are far apart -- :math:`so(2n)` has
-    :math:`n(2n-1)` while :math:`su(2^{n-1})` has :math:`4^{n-1}-1` -- so the
-    threshold does not need to be delicate.
+    The historical name refers to a heuristic cutoff :math:`d \leq 8n^2` for this
+    instance, not a proof of asymptotic fast-forwardability. The supported
+    Givens :math:`so(m)` route uses at most :math:`d=m(m-1)/2` rotations, but a small
+    dimension alone does not establish a compatible representation or make that
+    route cheaper than a product formula.
 
     Args:
         classification (Classification): The classified algebra.
         n_qubits (int): Number of qubits the Hamiltonian acts on.
     Returns:
-        bool: True if the algebra's dimension is polynomial in the qubit count.
+        bool: True if the algebra's dimension fits the routing budget.
     """
     return classification.get_dla_dim() <= 8 * n_qubits**2
 

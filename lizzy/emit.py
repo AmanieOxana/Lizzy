@@ -1,14 +1,12 @@
 """
     Native and optional shared-frame emission for Pauli-rotation sequences.
 
-    The builtin emission charges each rotation its CNOT ladder, with runs on one qubit
-    pair merged into three-CNOT blocks. On ordinary noncommuting 2-local models that is
-    the best measured emission. On chemistry it is not: at high Pauli weight a ladder
-    is paid term by term, where Pauli-graph synthesis can retain a shared Clifford
-    frame. A dependency-free signed-GF(2) backend handles abelian and one-logical-
-    qubit DLA frames directly. pytket's ``GreedyPauliSimp`` supplies two broader
-    heuristics; a direct intact-box variant and the established decomposed-box variant
-    win on different sequences.
+    The builtin candidate retains logical Pauli rotations and quotes their ladder
+    cost, with runs on one qubit pair priced by their canonical 0/1/2/3-CNOT class.
+    It does not materialize those CNOTs. A dependency-free signed-GF(2) backend
+    emits concrete gates for abelian and one-logical-qubit DLA frames. At higher
+    Pauli weight, optional pytket passes can share a Clifford frame across a wider
+    sequence; intact-box and decomposed-box heuristics win on different sequences.
 
     The native backend has no SDK dependency; without pytket installed it and the
     builtin emission remain. Equivalence is not taken on faith: every native algebraic
@@ -18,18 +16,25 @@
 from dataclasses import dataclass
 
 from lizzy.hamiltonian import Circuit
-from lizzy.native import native_frame_candidate, native_frame_circuit
+from lizzy.native import (
+    NativeCircuit,
+    ladder_circuit,
+    native_frame_candidate,
+    native_frame_circuit,
+)
 
 
 @dataclass(frozen=True, init=False)
 class EmissionQuote:
-    """One concrete way to emit a logical Lizzy rotation sequence.
+    """A logical cost quote or concrete emission of a Lizzy rotation sequence.
 
     ``circuit`` deliberately has a backend-dependent type: it is the logical
     :class:`~lizzy.hamiltonian.Circuit` for ``builtin``, a concrete
     :class:`lizzy.native.NativeCircuit` for ``native-frame``, and a rebased pytket
     circuit for the optional backends. The logical sequence remains available on
-    :class:`lizzy.synthesize.Result` for provenance and dense verification.
+    :class:`lizzy.synthesize.Result` for provenance and dense verification. Use
+    :attr:`is_concrete` to distinguish an emitted gate count from the builtin
+    analytical block/ladder quote.
     """
 
     backend: str
@@ -43,12 +48,24 @@ class EmissionQuote:
 
     @property
     def two_qubit_gates(self) -> int:
-        """Current count of the retained artifact, even if a caller mutates it."""
+        """Current gate count, or logical block cost for the builtin candidate."""
         if isinstance(self.circuit, Circuit):
             return self.circuit.two_qubit_gates
         if hasattr(self.circuit, "n_2qb_gates"):
             return self.circuit.n_2qb_gates()
         return self._quoted_two_qubit_gates
+
+    @property
+    def is_concrete(self) -> bool:
+        """Whether the retained non-logical artifact exposes its gate count.
+
+        Native and pytket circuits provide ``n_2qb_gates``. A logical
+        :class:`Circuit`, or an opaque artifact with only a supplied quote, does
+        not provide a materialized gate count.
+        """
+        return not isinstance(self.circuit, Circuit) and callable(
+            getattr(self.circuit, "n_2qb_gates", None)
+        )
 
 
 def pauli_exp_boxes(rotations, width: int):
@@ -61,7 +78,8 @@ def pauli_exp_boxes(rotations, width: int):
 
     The one place the angle convention lives: pytket's ``PauliExpBox`` takes half
     turns, ours is :math:`e^{-i\theta P}`, so the box parameter is
-    :math:`2\theta/\pi`.
+    :math:`2\theta/\pi`. Identity-only rotations are omitted, so this adapter's
+    equivalence contract is up to global phase.
 
     Args:
         rotations: ``(word_or_PauliString, angle)`` pairs.
@@ -173,61 +191,44 @@ def direct_tket_circuit(
     return synthesized
 
 
-def direct_tket_two_qubit_gates(
-    circuit: Circuit,
-    width: int,
-    *,
-    discount_rate: float = 0.9,
-    depth_weight: float = 0.0,
-    seed: int = 0,
-) -> int | None:
-    """Count CX gates actually emitted by the direct Pauli-gadget path.
-
-    Args:
-        circuit (Circuit): The rotations.
-        width (int): Number of qubits.
-        discount_rate (float): Lookahead discount used by ``GreedyPauliSimp``.
-        depth_weight (float): Weight assigned to depth by ``GreedyPauliSimp``.
-        seed (int): Deterministic tie-breaking seed for ``GreedyPauliSimp``.
-    Returns:
-        int | None: The emitted CX count, or ``None`` without pytket.
-    """
+def _optional_tket_quote(backend, emitter, circuit: Circuit, width: int) -> EmissionQuote | None:
+    """Isolate optional SDK failures and retain the artifact that was priced."""
     try:
-        from pytket import OpType
-        emitted = direct_tket_circuit(
-            circuit,
-            width,
-            discount_rate=discount_rate,
-            depth_weight=depth_weight,
-            seed=seed,
-        )
-    except ImportError:
+        emitted = emitter(circuit, width)
+        return EmissionQuote(backend, emitted.n_2qb_gates(), emitted)
+    except Exception:  # noqa: BLE001 - an optional candidate must fail closed
         return None
-    return emitted.n_gates_of_type(OpType.CX)
 
 
 def direct_emission_quote(circuit: Circuit, width: int) -> EmissionQuote | None:
     """Return the direct pytket candidate without letting it suppress fallback."""
-    try:
-        from pytket import OpType
-
-        emitted = direct_tket_circuit(circuit, width)
-        count = emitted.n_gates_of_type(OpType.CX)
-    except Exception:  # noqa: BLE001 - an optional candidate must fail closed
-        return None
-    return EmissionQuote("pytket-direct", count, emitted)
+    return _optional_tket_quote("pytket-direct", direct_tket_circuit, circuit, width)
 
 
 def greedy_emission_quote(circuit: Circuit, width: int) -> EmissionQuote | None:
     """Return the decomposed-box pytket candidate, isolated from the portfolio."""
-    try:
-        from pytket import OpType
+    return _optional_tket_quote("pytket-greedy", tket_circuit, circuit, width)
 
-        emitted = tket_circuit(circuit, width)
-        count = emitted.n_gates_of_type(OpType.CX)
-    except Exception:  # noqa: BLE001 - an optional candidate must fail closed
-        return None
-    return EmissionQuote("pytket-greedy", count, emitted)
+
+def native_emission_candidates(
+    circuit: Circuit, width: int, *, include_frame: bool = True,
+    frame_failures: tuple[type[Exception], ...] = (),
+) -> list[tuple[str, NativeCircuit]]:
+    """Build concrete, phase-preserving ladder and eligible-frame artifacts.
+
+    Order is stable and ladder-first. No cost selection, dense verification or
+    SDK lookup happens here. Failures propagate by default; a caller may name
+    exceptions from optional frame eligibility/construction that should retain
+    the ladder. Ladder construction errors always propagate. Logical cost
+    estimates are never included in this portfolio.
+    """
+    candidates = [("native-ladder", ladder_circuit(circuit, width))]
+    try:
+        if include_frame and native_frame_candidate(circuit, width):
+            candidates.append(("native-frame", native_frame_circuit(circuit, width)))
+    except frame_failures:
+        pass
+    return candidates
 
 
 def native_emission_quote(circuit: Circuit, width: int) -> EmissionQuote:
@@ -242,15 +243,15 @@ def emission_candidates(
     *,
     exhaustive: bool = True,
 ) -> list[EmissionQuote]:
-    """Build every structurally eligible exact emission of a logical sequence.
+    """Quote the builtin logical cost and eligible concrete emission candidates.
 
     The builtin circuit is always a candidate. A dependency-free native candidate is
     added when the GF(2) span is abelian or is one non-abelian logical qubit. When
     pytket is installed and :func:`shared_frame_candidate` passes, the direct
     intact-box pass is also run, and with ``exhaustive`` the established
     decomposed-box pass too. Keeping the candidates separate matters: their
-    heuristics win on different Hamiltonians, while a minimum over exact candidates
-    can never make the emitted gate count worse. Each optional candidate is isolated
+    heuristics win on different Hamiltonians, while the minimum never exceeds the
+    builtin quoted cost. Each optional pytket candidate is isolated
     so an absent or incompatible pass leaves the builtin artifact available.
 
     Args:
@@ -259,7 +260,7 @@ def emission_candidates(
         exhaustive (bool): Also run the slower decomposed-box heuristic. The direct
             path is the fast quote used while shortlisting synthesis routes.
     Returns:
-        list[EmissionQuote]: Deterministically ordered concrete emissions.
+        list[EmissionQuote]: Deterministically ordered logical and concrete quotes.
     """
     candidates = [
         EmissionQuote(
@@ -300,7 +301,7 @@ def best_emission(
     *,
     exhaustive: bool = True,
 ) -> EmissionQuote:
-    """Return the cheapest available exact emission, including its artifact."""
+    """Return the cheapest quote and retained artifact; inspect ``is_concrete``."""
     return min(
         emission_candidates(circuit, width, exhaustive=exhaustive),
         key=lambda quote: quote.two_qubit_gates,

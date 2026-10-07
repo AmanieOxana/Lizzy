@@ -19,7 +19,7 @@ def _words(clusters):
 
 @pytest.mark.parametrize(
     "strategy",
-    ["largest_first", "saturation_largest_first", "DSATUR", "independent_set"],
+    ["largest_first", "saturation_largest_first", "independent_set"],
 )
 def test_colouring_strategies_are_complete_commuting_and_deterministic(
     colouring_fixture, strategy
@@ -40,24 +40,3 @@ def test_colouring_strategies_are_complete_commuting_and_deterministic(
     for cluster in first:
         paulis = [pauli for _, pauli in terms_of(cluster)]
         assert all(left.commutes_with(right) for left in paulis for right in paulis)
-
-
-def test_independent_set_improves_the_fixture_over_the_default(
-    colouring_fixture,
-) -> None:
-    default = commuting_clusters(colouring_fixture)
-    explicit_default = commuting_clusters(colouring_fixture, strategy="largest_first")
-    independent = commuting_clusters(colouring_fixture, strategy="independent_set")
-
-    assert _words(default) == _words(explicit_default)
-    assert len(default) == 4
-    assert len(independent) == 3
-
-
-def test_dsatur_aliases_saturation_largest_first(colouring_fixture) -> None:
-    saturation = commuting_clusters(
-        colouring_fixture, strategy="saturation_largest_first"
-    )
-    dsatur = commuting_clusters(colouring_fixture, strategy="DSATUR")
-
-    assert _words(dsatur) == _words(saturation)

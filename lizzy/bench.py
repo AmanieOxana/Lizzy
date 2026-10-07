@@ -222,12 +222,6 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, default=5)
     parser.add_argument("--no-verify", action="store_true")
     parser.add_argument(
-        "--calibrate",
-        action="store_true",
-        help="measure the step-count overshoot at the smallest size and reuse it "
-        "(a measurement, not a bound)",
-    )
-    parser.add_argument(
         "--randomized",
         action="store_true",
         help="allow the sampled branch, which does not keep its error budget",

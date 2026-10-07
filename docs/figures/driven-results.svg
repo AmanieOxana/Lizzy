@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg role="img" aria-labelledby="driven-results-title driven-results-desc" xmlns:xlink="http://www.w3.org/1999/xlink" width="835.2pt" height="352.8pt" viewBox="0 0 835.2 352.8" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <desc id="driven-results-desc">Driven TFIM3 snapshot 2026-09-25, operator-error target 1e-06. Wei–Norman: 32 actual emitted CX gates; Magnus4: 512 actual emitted CX gates; Fer4: 1024 actual emitted CX gates; Midpoint-S2: 4100 actual emitted CX gates. All outputs passed. A linear scale begins at zero. One three-qubit target, not a universal ranking; step-grid settings need not be minimal. Same native-ladder and eligible native-frame portfolio. Source: docs/driven_benchmark.txt. Regenerate: python docs/figures/generate.py.</desc>
+ <title id="driven-results-title">Driven TFIM3: fewer CX with Wei–Norman</title>
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:title>Driven TFIM3: fewer CX with Wei–Norman</dc:title>
+    <dc:date>2026-09-25</dc:date>
+    <dc:description>Driven TFIM3 snapshot 2026-09-25, operator-error target 1e-06. Wei–Norman: 32 actual emitted CX gates; Magnus4: 512 actual emitted CX gates; Fer4: 1024 actual emitted CX gates; Midpoint-S2: 4100 actual emitted CX gates. All outputs passed. A linear scale begins at zero. One three-qubit target, not a universal ranking; step-grid settings need not be minimal. Same native-ladder and eligible native-frame portfolio. Source: docs/driven_benchmark.txt. Regenerate: python docs/figures/generate.py.</dc:description>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Lizzy docs/figures/generate.py (Matplotlib)</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 352.8 
+L 835.2 352.8 
+L 835.2 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 158.688 264.6 
+L 780.912 264.6 
+L 780.912 75.852 
+L 158.688 75.852 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1">
+      <path d="M 158.688 264.6 
+L 158.688 75.852 
+" clip-path="url(#p8b041ae035)" style="fill: none; stroke: #e7ecf2; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_2"/>
+     <g id="text_1">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #253449" x="158.688" y="281.237813" transform="rotate(-0 158.688 281.237813)">0</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_3">
+      <path d="M 292.990612 264.6 
+L 292.990612 75.852 
+" clip-path="url(#p8b041ae035)" style="fill: none; stroke: #e7ecf2; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_4"/>
+     <g id="text_2">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #253449" x="292.990612" y="281.237813" transform="rotate(-0 292.990612 281.237813)">1000</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_5">
+      <path d="M 427.293223 264.6 
+L 427.293223 75.852 
+" clip-path="url(#p8b041ae035)" style="fill: none; stroke: #e7ecf2; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_6"/>
+     <g id="text_3">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #253449" x="427.293223" y="281.237813" transform="rotate(-0 427.293223 281.237813)">2000</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_7">
+      <path d="M 561.595835 264.6 
+L 561.595835 75.852 
+" clip-path="url(#p8b041ae035)" style="fill: none; stroke: #e7ecf2; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_8"/>
+     <g id="text_4">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #253449" x="561.595835" y="281.237813" transform="rotate(-0 561.595835 281.237813)">3000</text>
+     </g>
+    </g>
+    <g id="xtick_5">
+     <g id="line2d_9">
+      <path d="M 695.898447 264.6 
+L 695.898447 75.852 
+" clip-path="url(#p8b041ae035)" style="fill: none; stroke: #e7ecf2; stroke-width: 0.8; stroke-linecap: square"/>
+     </g>
+     <g id="line2d_10"/>
+     <g id="text_5">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #253449" x="695.898447" y="281.237813" transform="rotate(-0 695.898447 281.237813)">4000</text>
+     </g>
+    </g>
+    <g id="text_6">
+     <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #253449" x="469.8" y="298.787188" transform="rotate(-0 469.8 298.787188)">Actual emitted CX gates · linear scale from zero</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_11"/>
+     <g id="text_7">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: end; fill: #253449" x="146.688" y="103.246132" transform="rotate(-0 146.688 103.246132)">Wei–Norman</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_12"/>
+     <g id="text_8">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: end; fill: #253449" x="146.688" y="151.445315" transform="rotate(-0 146.688 151.445315)">Magnus4</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_13"/>
+     <g id="text_9">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: end; fill: #253449" x="146.688" y="199.644498" transform="rotate(-0 146.688 199.644498)">Fer4</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_14"/>
+     <g id="text_10">
+      <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: end; fill: #253449" x="146.688" y="247.843681" transform="rotate(-0 146.688 247.843681)">Midpoint-S2</text>
+     </g>
+    </g>
+   </g>
+   <g id="patch_3">
+    <path d="M 158.688 111.422997 
+L 162.985684 111.422997 
+L 162.985684 84.431455 
+L 158.688 84.431455 
+z
+" clip-path="url(#p8b041ae035)" style="fill: #087e8b"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 158.688 159.62218 
+L 227.450937 159.62218 
+L 227.450937 132.630637 
+L 158.688 132.630637 
+z
+" clip-path="url(#p8b041ae035)" style="fill: #72839b"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 158.688 207.821363 
+L 296.213874 207.821363 
+L 296.213874 180.82982 
+L 158.688 180.82982 
+z
+" clip-path="url(#p8b041ae035)" style="fill: #72839b"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 158.688 256.020545 
+L 709.328708 256.020545 
+L 709.328708 229.029003 
+L 158.688 229.029003 
+z
+" clip-path="url(#p8b041ae035)" style="fill: #72839b"/>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="172.897216" y="101.790351" transform="rotate(-0 172.897216 101.790351)">32</text>
+   </g>
+   <g id="text_12">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="237.36247" y="149.989534" transform="rotate(-0 237.36247 149.989534)">512</text>
+   </g>
+   <g id="text_13">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="306.125407" y="198.188716" transform="rotate(-0 306.125407 198.188716)">1,024</text>
+   </g>
+   <g id="text_14">
+    <text style="font-weight: 700; font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="719.240241" y="246.387899" transform="rotate(-0 719.240241 246.387899)">4,100</text>
+   </g>
+  </g>
+  <g id="text_15">
+   <text style="font-weight: 700; font-size: 21px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="29.232" y="22.2264" transform="rotate(-0 29.232 22.2264)">Driven TFIM3: fewer CX with Wei–Norman</text>
+  </g>
+  <g id="text_16">
+   <text style="font-size: 14px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #72839b" x="29.232" y="44.1" transform="rotate(-0 29.232 44.1)">One three-qubit driven target · snapshot 2026-09-25 · operator-error target 1e-06</text>
+  </g>
+  <g id="text_17">
+   <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="29.232" y="320.3424" transform="rotate(-0 29.232 320.3424)">One target, not a universal ranking. Step-grid settings are not guaranteed minima.</text>
+  </g>
+  <g id="text_18">
+   <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #253449" x="29.232" y="334.1016" transform="rotate(-0 29.232 334.1016)">Native-ladder / eligible native-frame portfolio. All four outputs passed.</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p8b041ae035">
+   <rect x="158.688" y="75.852" width="622.224" height="188.748"/>
+  </clipPath>
+ </defs>
+</svg>

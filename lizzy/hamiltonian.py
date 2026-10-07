@@ -161,10 +161,11 @@ class Circuit:
         A maximal run of consecutive rotations whose joint support fits on one qubit
         pair compiles as a single canonical two-qubit block, and is charged what that
         block's canonical class costs -- at most three CNOTs however many rotations it
-        holds (Kernpiler's partial-Trotterization observation, arXiv:2504.07214), and
-        two where a canonical parameter is trivial. Runs that a pair cannot hold are
-        charged their CNOT ladders. A run spanning routes is attributed to the route
-        that started it, which is what makes the per-route costs sum to the total.
+        holds (Kernpiler's partial-Trotterization observation, arXiv:2504.07214), two
+        where a canonical parameter is trivial, and one at the CNOT class itself. Runs
+        that a pair cannot hold are charged their CNOT ladders. A run spanning routes
+        is attributed to the route that started it, which is what makes the per-route
+        costs sum to the total.
 
         Yields:
             tuple[str, int]: Route label and two-qubit gate count, one per block.
@@ -191,9 +192,11 @@ class Circuit:
 
     @property
     def two_qubit_gates(self) -> int:
-        """int: Total two-qubit gate count, the quantity being minimized.
+        """int: Analytical block/ladder cost, not a materialized CX-gate count.
 
-        Counted block-aware; see :meth:`blocks`.
+        The logical rotation sequence is unchanged by this quote. Pair blocks are
+        priced by canonical class and wider rotations by independent ladders;
+        see :meth:`blocks`. Concrete native/SDK emissions may have different costs.
         """
         return sum(charge for _, charge in self.blocks())
 

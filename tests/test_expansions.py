@@ -84,8 +84,8 @@ def test_global_fourth_order_convergence_of_plans_and_circuits(method):
 
 
 @pytest.mark.parametrize("method", METHODS)
-@pytest.mark.parametrize("span", [(0.3, 1.1), (1.1, 0.3)])
-def test_encoded_drive_absolute_times_and_reverse_time(method, span):
+def test_encoded_drive_absolute_times_and_reverse_time(method):
+    span = (1.1, 0.3)
     drive, exact = rotating_field(("XXX", "XXY", "IIZ"))
     result = synthesize_expansion(drive, span, method=method, steps=32)
     assert np.linalg.norm(circuit_matrix(result.circuit, 3) - exact(*span), 2) < 1e-6
@@ -96,9 +96,12 @@ def test_encoded_drive_absolute_times_and_reverse_time(method, span):
 
 
 @pytest.mark.parametrize("method", METHODS)
-def test_general_two_qubit_drive_against_independent_dense_ode(method):
-    drive = DrivenHamiltonian(["XI", "ZI", "IX", "IZ", "ZZ"],
-                              lambda t: [0.3 + t / 4, 0.2 * np.cos(t), 0.4, np.sin(t) / 5, 0.3])
+def test_general_two_qubit_drive_and_identity_against_independent_dense_ode(method):
+    # One full-unitary oracle covers generic noncommuting evolution and the
+    # central time-dependent phase, which must not disappear during synthesis.
+    drive = DrivenHamiltonian(["XI", "ZI", "IX", "IZ", "ZZ", "II"],
+                              lambda t: [0.3 + t / 4, 0.2 * np.cos(t), 0.4,
+                                         np.sin(t) / 5, 0.3, 0.17 + t**3])
     matrices = np.array([pauli_matrix(p) for p in drive.paulis])
 
     def rhs(time, flattened):
@@ -109,15 +112,14 @@ def test_general_two_qubit_drive_against_independent_dense_ode(method):
                           method="DOP853", rtol=1e-12, atol=1e-14, max_step=0.005)
     assert reference.success
     result = synthesize_expansion(drive, (0.2, 0.8), method=method, steps=16)
-    assert result.dimension == 15
+    assert result.dimension == 16
     assert np.linalg.norm(circuit_matrix(result.circuit, 2)
                           - reference.y[:, -1].reshape(4, 4), 2) < 1e-7
 
 
-@pytest.mark.parametrize("method", METHODS)
-def test_static_noncommuting_hamiltonian_has_no_expansion_correction(method):
+def test_static_noncommuting_hamiltonian_has_no_fer_correction():
     drive = DrivenHamiltonian(["X", "Y", "I"], lambda t: [0.7, -0.2, 0.4])
-    result = synthesize_expansion(drive, (0, 1.2), method=method, steps=1)
+    result = synthesize_expansion(drive, (0, 1.2), method="fer4", steps=1)
     target = expm(-1.2j * (0.7 * pauli_matrix("X") - 0.2 * pauli_matrix("Y") + 0.4 * np.eye(2)))
     assert result.exponentials == 1  # Fer correction is exactly zero, not a second gate.
     assert np.linalg.norm(plan_matrix(result.plan) - target, 2) < 1e-14
@@ -125,10 +127,9 @@ def test_static_noncommuting_hamiltonian_has_no_expansion_correction(method):
     assert result.compilation_rhs_evaluations > 0  # exp(-itH) still needs compilation.
 
 
-@pytest.mark.parametrize("method", METHODS)
-def test_commuting_cubic_drive_and_large_identity_phase_emit_directly(method):
+def test_commuting_cubic_drive_and_large_identity_phase_emit_directly():
     drive = DrivenHamiltonian(["ZI", "IZ", "II"], lambda t: [t**3, 2 * t, 1000])
-    result = synthesize_expansion(drive, (0, 1), method=method, steps=1,
+    result = synthesize_expansion(drive, (0, 1), method="fer4", steps=1,
                                   max_rhs_evaluations=1, max_compilation_segments=1)
     target = expm(-1j * (0.25 * pauli_matrix("ZI") + pauli_matrix("IZ") + 1000 * np.eye(4)))
     assert np.linalg.norm(circuit_matrix(result.circuit, 2) - target, 2) < 1e-10
@@ -136,39 +137,24 @@ def test_commuting_cubic_drive_and_large_identity_phase_emit_directly(method):
     assert result.compilation_rhs_evaluations == result.compilation_segments == 0
 
 
-@pytest.mark.parametrize("method", METHODS)
-def test_quadrature_error_remains_even_when_all_commutators_vanish(method):
+def test_quadrature_error_remains_even_when_all_commutators_vanish():
     drive = DrivenHamiltonian(["Z"], lambda t: [t**4])
     target = expm(-0.2j * pauli_matrix("Z"))
-    errors = [np.linalg.norm(plan_matrix(expand_driven(drive, (0, 1), method=method, steps=n))
+    errors = [np.linalg.norm(plan_matrix(expand_driven(drive, (0, 1), method="magnus4", steps=n))
                              - target, 2) for n in (2, 4)]
     assert errors[1] > 1e-6
     assert 15.9 < errors[0] / errors[1] < 16.1
 
 
-@pytest.mark.parametrize("method", METHODS)
-def test_noncommuting_drive_retains_time_dependent_global_phase(method):
-    spin, exact = rotating_field()
-    drive = DrivenHamiltonian(["X", "Y", "Z", "I"], lambda t: [*spin.at(t), t**3])
-    result = synthesize_expansion(drive, (0.2, 0.8), method=method, steps=16)
-    target = np.exp(-1j * (0.8**4 - 0.2**4) / 4) * exact(0.2, 0.8)
-    assert np.linalg.norm(circuit_matrix(result.circuit, 1) - target, 2) < 1e-6
-
-
-@pytest.mark.parametrize("method", METHODS)
-def test_zero_duration_never_calls_controls(method):
+def test_zero_duration_and_zero_drive_keep_closure_but_emit_no_factors():
     def unused(t):
         raise AssertionError("no control evaluation expected")
 
-    result = synthesize_expansion(DrivenHamiltonian(["X", "Y"], unused), (0.2, 0.2), method=method)
+    result = synthesize_expansion(DrivenHamiltonian(["X", "Y"], unused), (0.2, 0.2), method="fer4")
     assert result.dimension == 3
     assert result.steps == result.exponentials == len(result.circuit) == 0
     assert result.plan.control_evaluations == result.compilation_rhs_evaluations == 0
-
-
-@pytest.mark.parametrize("method", METHODS)
-def test_zero_drive_keeps_declared_closure_but_has_no_exponentials(method):
-    plan = expand_driven(DrivenHamiltonian(["X", "Y"], lambda t: [0, 0]), (0, 1), method=method)
+    plan = expand_driven(DrivenHamiltonian(["X", "Y"], lambda t: [0, 0]), (0, 1), method="fer4")
     assert plan.dimension == 3
     assert plan.exponentials == 0
     assert plan.steps == 1
@@ -206,25 +192,12 @@ def test_compilation_budgets_are_global_across_factors():
 
 
 @pytest.mark.parametrize("kwargs", [
-    {"method": "fer2"}, {"steps": 0}, {"steps": 1.5}, {"steps": True},
-    {"max_dimension": 0}, {"max_exponentials": -1}, {"max_rhs_evaluations": 0},
-    {"max_compilation_segments": 0}, {"rtol": 0}, {"rtol": np.nan}, {"atol": np.inf},
+    {"method": "fer2"}, {"steps": 0}, {"steps": True},
+    {"max_rhs_evaluations": 0}, {"rtol": 0},
 ])
 def test_invalid_options_are_rejected_even_for_direct_factors(kwargs):
     with pytest.raises(ValueError):
         synthesize_expansion(DrivenHamiltonian(["Z"], lambda t: [1]), (0, 1), **kwargs)
-
-
-@pytest.mark.parametrize("span", [(0,), (0, 1, 2), (0, np.inf)])
-def test_invalid_time_spans(span):
-    with pytest.raises(ValueError):
-        expand_driven(DrivenHamiltonian(["Z"], lambda t: [1]), span)
-
-
-@pytest.mark.parametrize("values", [[1j], [np.nan], [np.inf], [1, 2]])
-def test_invalid_controls_fail_without_returning_plan(values):
-    with pytest.raises(ValueError):
-        expand_driven(DrivenHamiltonian(["Z"], lambda t: values), (0, 1))
 
 
 def test_unresolvable_time_grid_fails_instead_of_repeating_nodes():

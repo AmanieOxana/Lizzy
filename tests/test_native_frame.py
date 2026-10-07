@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from paulie.common.pauli_string_factory import get_pauli_string
 
-from lizzy.dense import circuit_matrix, infidelity
+from lizzy.dense import circuit_matrix, evolution, infidelity
 from lizzy.emit import best_emission
 from lizzy.hamiltonian import Circuit, anticommutation_matrix, hamiltonian
 from lizzy.native import (
@@ -14,9 +14,10 @@ from lizzy.native import (
     NativeGate,
     frame_profile,
     ladder_circuit,
+    native_frame_candidates,
     native_frame_circuit,
 )
-from lizzy.synthesize import synthesize
+from lizzy.synthesize import Result, synthesize
 
 
 def _circuit(rotations: list[tuple[str, float]]) -> Circuit:
@@ -28,7 +29,6 @@ def _circuit(rotations: list[tuple[str, float]]) -> Circuit:
 
 def _assert_exact(logical: Circuit, emitted: NativeCircuit, width: int) -> None:
     target = circuit_matrix(logical, width)
-    assert infidelity(target, emitted.get_unitary()) < 1e-12
     assert np.allclose(target, emitted.get_unitary(), rtol=0, atol=2e-12)
     assert emitted.n_2qb_gates() == sum(gate.kind == "cx" for gate in emitted.gates)
     assert all(isinstance(gate, NativeGate) for gate in emitted.gates)
@@ -137,34 +137,37 @@ def test_so3_frame_localizes_three_dependent_axes_once() -> None:
     _assert_exact(logical, emitted, 3)
 
 
-def test_commuting_ghz_stabilizers_share_one_global_frame() -> None:
-    """Independent commuting stabilizers are diagonalized together.
+def test_named_frame_alternatives_preserve_angles_phase_and_legacy_selection() -> None:
+    families = [
+        ([("XXX", 0.17), ("ZZI", -0.29), ("YYX", 0.41)], "fixed-"),
+        ([("XXX", -0.21), ("XXY", 0.37), ("IIZ", -0.13)], "fixed-"),
+        ([("XYZ", 0.23), ("ZXI", -0.31), ("IYY", 0.19)], "rolling"),
+    ]
+    for rotations, prefix in families:
+        # Scalar terms and a surviving zero angle must not change the ordered
+        # rotation contract, even when a frame flips Pauli signs or pivot wires.
+        rotations = [("III", 0.37), *rotations, (rotations[0][0], 0.0), ("III", -0.11)]
+        logical = _circuit(rotations)
+        expected_angles = [2 * abs(angle) for word, angle in rotations if word != "III"]
+        for lookahead in (0, 8):
+            candidates = native_frame_candidates(logical, 3, lookahead=lookahead)
+            assert 0 < len(candidates) <= 6 * 3
+            names = [name for name, _ in candidates]
+            assert len(set(names)) == len(names)
+            assert all(name.startswith(prefix) for name in names)
+            assert candidates == native_frame_candidates(logical, 3, lookahead=lookahead)
+            for _, emitted in candidates:
+                assert [abs(gate.angle) for gate in emitted.gates if gate.kind == "rz"] == expected_angles
+                assert emitted.global_phase == pytest.approx(-0.26)
+                _assert_exact(logical, emitted, 3)
+            expected = min(
+                (emitted for _, emitted in candidates),
+                key=lambda emitted: (emitted.two_qubit_gates, len(emitted.gates)),
+            )
+            assert native_frame_circuit(logical, 3, lookahead=lookahead) == expected
 
-    ``H(0); CX(0, 1); CX(0, 2)`` carries the three local Z generators onto these
-    GHZ stabilizers.  Entering and leaving that frame costs four CXs instead of the
-    eight CXs of three independent Pauli ladders.
-    """
-    logical = _circuit([("XXX", 0.19), ("ZZI", -0.31), ("ZIZ", 0.43)])
-
-    emitted = native_frame_circuit(logical, 3)
-
-    assert logical.two_qubit_gates == 8
-    assert emitted.n_2qb_gates() == 4
-    _assert_exact(logical, emitted, 3)
-
-
-def test_dependent_commuting_word_keeps_its_operator_sign() -> None:
-    """GF(2) dependence alone does not contain the Pauli product phase.
-
-    In bits ``YYX = XXX + ZZI``, while as Hermitian operators
-    ``XXX * ZZI = -YYX``.  Losing that minus sign produces a plausible frame with
-    the wrong third rotation, so this is checked against the complete dense unitary.
-    """
-    logical = _circuit([("XXX", 0.17), ("ZZI", 0.29), ("YYX", 0.41)])
-
-    emitted = native_frame_circuit(logical, 3)
-
-    _assert_exact(logical, emitted, 3)
+    assert native_frame_candidates(Circuit(), 3) == [("empty", NativeCircuit(3))]
+    assert native_frame_circuit(Circuit(), 3) == NativeCircuit(3)
 
 
 def test_same_anticommutation_graph_does_not_hide_a_rank_three_dla() -> None:
@@ -192,33 +195,6 @@ def test_same_anticommutation_graph_does_not_hide_a_rank_three_dla() -> None:
     _assert_exact(independent, native_frame_circuit(independent, 3), 3)
 
 
-def test_native_frame_emission_is_deterministic() -> None:
-    logical = _circuit(
-        [("XXX", 0.17), ("ZZI", 0.29), ("YYX", 0.41), ("IIZ", -0.23)]
-    )
-
-    first = native_frame_circuit(logical, 3)
-    second = native_frame_circuit(logical, 3)
-
-    assert first.gates == second.gates
-    assert first.n_2qb_gates() == second.n_2qb_gates()
-    _assert_exact(logical, first, 3)
-
-
-def test_native_rz_uses_the_standard_half_angle_convention() -> None:
-    """A Lizzy rotation exp(-i theta Z) is a hardware Rz(2 theta)."""
-    theta = 0.37
-    logical = _circuit([("Z", theta)])
-
-    emitted = native_frame_circuit(logical, 1)
-    rotations = [gate for gate in emitted.gates if gate.kind == "rz"]
-
-    assert len(rotations) == 1
-    assert rotations[0].angle == pytest.approx(2 * theta)
-    assert emitted.n_2qb_gates() == 0
-    _assert_exact(logical, emitted, 1)
-
-
 def test_best_emission_selects_native_frame_without_pytket(monkeypatch) -> None:
     logical = _circuit([("XXX", 0.21), ("XXY", 0.37), ("IIZ", -0.13)])
     real_import = builtins.__import__
@@ -232,26 +208,38 @@ def test_best_emission_selects_native_frame_without_pytket(monkeypatch) -> None:
     quote = best_emission(logical, 3)
 
     assert quote.backend == "native-frame"
+    assert quote.is_concrete
     assert isinstance(quote.circuit, NativeCircuit)
     assert quote.two_qubit_gates == 4
     _assert_exact(logical, quote.circuit, 3)
 
     before = quote.two_qubit_gates
+    result = Result(logical, emission=quote)
+    assert result.emission_is_concrete
+    assert result.emitted_circuit is quote.circuit
     quote.circuit.append(NativeGate("cx", (0, 1)))
     assert quote.two_qubit_gates == before + 1
+    assert result.two_qubit_gates == before + 1
 
 
 def test_synthesis_retains_the_native_artifact_it_prices() -> None:
-    """A repeated formula pays one shared DLA frame, not one ladder per gadget."""
-    operator = hamiltonian({"XXX": 0.7, "XXY": -0.2, "IIZ": 0.4})
+    """Commuting GHZ stabilizers retain the cheaper shared-frame artifact.
 
-    result = synthesize(operator, time=1.0, steps=2)
+    This tests emission selection without relying on another route's mapping
+    failure: three exact commuting rotations share one four-CX Clifford frame.
+    """
+    operator = hamiltonian({"XXX": 0.7, "ZZI": -0.2, "ZIZ": 0.4})
+
+    result = synthesize(operator, time=1.0)
 
     assert result.emission_backend == "native-frame"
     assert isinstance(result.emitted_circuit, NativeCircuit)
-    assert len(result.circuit.rotations) == 9
-    assert result.logical_two_qubit_gates == 24
+    assert len(result.circuit.rotations) == 3
+    assert result.logical_two_qubit_gates == 8
     assert result.two_qubit_gates == 4
+    np.testing.assert_allclose(
+        result.emitted_circuit.get_unitary(), evolution(operator, 1.0), atol=2e-12, rtol=0,
+    )
     assert (
         infidelity(
             circuit_matrix(result.circuit, 3), result.emitted_circuit.get_unitary()

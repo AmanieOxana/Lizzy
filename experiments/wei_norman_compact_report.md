@@ -1,9 +1,12 @@
 # Compact Wei–Norman experiment — 2026-09-25
 
 Historical pre-integration snapshot: the compact policy has since been added to
-`lizzy.driven` and `lizzy.wei_norman`. The harness pins its historical
-`production` comparator to `chart_radius=0.5`; the numbers saved below are not
-claims about the new default. See the current README and
+`lizzy.driven` and `lizzy.wei_norman`. The duplicate prototype solver and patched
+comparison harness were retired during the 2026-10-07 cleanup; their source is
+preserved in commit `b7f71adde811be6ca91f7266291b11565c0fbc55`.
+The numbers below describe the historical experiment, not the current default.
+Use `python -m experiments.wei_norman_validation` to validate today's public API.
+See the current README and
 [paper review](../docs/wei_norman_review.md) for the integrated interface.
 
 ## Result
@@ -104,7 +107,11 @@ was nonsingular continuously**. Removing the L1 guard is not, by itself, a
 production-quality coordinate atlas. Local solver tolerances likewise are not
 a global operator-error certificate.
 
-## Reproduce
+## Reproduce the historical snapshot
+
+Use a separate checkout of commit `b7f71adde811be6ca91f7266291b11565c0fbc55`
+for the original harness and its three policies. The command below is historical;
+the current production-only harness is described in [the experiment index](README.md).
 
 ```sh
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 python3 -m experiments.wei_norman_compact_bench
@@ -119,8 +126,8 @@ validation oracles (at most three qubits); synthesis never uses them.
 
 Production revision: `f87685cbdccc0e3168c1f8c38be0324d7455c1ed`. Pre-existing
 unrelated working-tree changes were retained. The isolated solver and harness
-are in [wei_norman_compact.py](wei_norman_compact.py) and
-[wei_norman_compact_bench.py](wei_norman_compact_bench.py).
+are preserved in [the historical solver](https://github.com/AmanieOxana/Lizzy/blob/b7f71adde811be6ca91f7266291b11565c0fbc55/experiments/wei_norman_compact.py)
+and [the historical harness](https://github.com/AmanieOxana/Lizzy/blob/b7f71adde811be6ca91f7266291b11565c0fbc55/experiments/wei_norman_compact_bench.py).
 
 Validation: **486 tests passed** on the working tree, including 39 new solver
 and comparison-harness tests. Ruff passed for all four new Python files. The

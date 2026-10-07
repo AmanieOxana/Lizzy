@@ -1,5 +1,9 @@
 """
-    The compiler benchmark behind the README table.
+    Historical CX-only HamLib/product-formula benchmark.
+
+    For the current accuracy-matched Clifford+T comparison, run
+    ``python -m experiments.compiler_comparison`` from the repository checkout.
+    This module retains the older contracts and is not a current compiler ranking.
 
     Two contracts, because no single one is fair at every size. At eight qubits every
     compiler gets the fewest steps that reach the budget against a dense reference --

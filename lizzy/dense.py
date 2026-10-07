@@ -129,6 +129,21 @@ def circuit_matrix(circuit: Circuit, width: int) -> np.ndarray:
     return total
 
 
+def operator_errors(actual: np.ndarray, target: np.ndarray) -> dict[str, float]:
+    """Strict and trace-phase-aligned spectral norms for dense verification.
+
+    Alignment uses the phase of ``trace(target† actual)``, or one when that
+    overlap is zero. It is not a minimization of spectral norm over phases.
+    Thresholds and any requirement to retain absolute phase belong to callers.
+    """
+    if not np.isfinite(actual).all():
+        raise ValueError("Nonfinite output cannot pass a unitary error check")
+    overlap = np.trace(target.conj().T @ actual)
+    phase = overlap / abs(overlap) if abs(overlap) else 1.0
+    return {"strict": float(np.linalg.norm(actual - target, ord=2)),
+            "phase_aligned": float(np.linalg.norm(actual - phase * target, ord=2))}
+
+
 def infidelity(target: np.ndarray, achieved: np.ndarray) -> float:
     r"""
     Measure how far a circuit is from its target, ignoring global phase.

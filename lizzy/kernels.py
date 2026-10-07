@@ -46,6 +46,10 @@ _CANONICAL_DIAGONALS = np.column_stack(
     + [np.ones(4)]
 )
 
+_SPECTRUM_PERMUTATIONS = np.array(
+    list(itertools.permutations(range(4))), dtype=np.int64
+)
+
 
 def _euler_rotations(u: np.ndarray, qubit_word: tuple[str, str]) -> list:
     """Write a single-qubit unitary as up to three weight-one rotations.
@@ -105,15 +109,96 @@ def _canonical_angles(phases: np.ndarray) -> np.ndarray:
     return np.linalg.lstsq(_CANONICAL_DIAGONALS, phases / 2, rcond=None)[0][:3]
 
 
+def two_qubit_unitary(
+    rotations: list[tuple[object, float]], qubits: tuple[int, int]
+) -> np.ndarray:
+    """Compose rotations confined to one qubit pair into their 4x4 unitary.
+
+    The tensor order follows Lizzy's dense convention: ``qubits[0]`` is the major
+    (left Kronecker) factor. Backend adapters that use Qiskit's little-endian circuit
+    convention must reverse the local factors when assigning local circuit qubits.
+
+    Args:
+        rotations (list): ``(word_or_PauliString, angle)`` pairs.
+        qubits (tuple[int, int]): Ordered pair defining the local tensor factors.
+    Returns:
+        numpy.ndarray: The composed 4x4 unitary, in application order.
+
+    Raises:
+        ValueError: If the pair is invalid or a rotation acts outside it.
+    """
+    if len(qubits) != 2 or qubits[0] == qubits[1] or min(qubits) < 0:
+        raise ValueError(f"A two-qubit unitary needs two distinct qubits, got {qubits}.")
+
+    i, j = qubits
+    unitary = np.eye(4, dtype=complex)
+    for pauli, angle in rotations:
+        word = str(pauli)
+        if max(qubits) >= len(word):
+            raise ValueError(
+                f"Pauli width {len(word)} does not contain qubit pair {qubits}."
+            )
+        outside = [
+            q for q, letter in enumerate(word) if q not in qubits and letter != "I"
+        ]
+        if outside:
+            raise ValueError(
+                f"Pauli {word!r} acts outside qubit pair {qubits} on {outside}."
+            )
+        try:
+            local = np.kron(_PAULI[word[i]], _PAULI[word[j]])
+        except KeyError as error:
+            raise ValueError(f"Invalid Pauli word {word!r}.") from error
+        unitary = (np.cos(angle) * np.eye(4) - 1j * np.sin(angle) * local) @ unitary
+    return unitary
+
+
+def _minimum_cnot_count(unitary: np.ndarray, tolerance: float = 1e-9) -> int:
+    r"""Classify the exact 0/1/2/3-CNOT local-equivalence class.
+
+    In the magic basis, normalize ``unitary`` into SU(4) and form
+    :math:`M=V^T V`.  The characteristic polynomial of this local invariant gives
+    the minimal CNOT count (Shende, Bullock & Markov, PRA 70, 012310):
+
+    * zero CNOTs iff its spectrum is uniformly ``+1`` or ``-1``;
+    * one iff its spectrum is two ``+i`` and two ``-i`` values;
+    * at most two iff its characteristic polynomial is real, equivalently its
+      eigenvalue multiset is closed under complex conjugation;
+    * three otherwise.
+
+    This deliberately does not infer the class from diagonalizing phases. Degenerate
+    eigenspaces make those phases basis-dependent: at the SWAP point that shortcut can
+    erase all three nonlocal coordinates and incorrectly report a local gate.
+    """
+    magic = _MAGIC.conj().T @ unitary @ _MAGIC
+    magic = magic / np.linalg.det(magic) ** 0.25
+    invariant = magic.T @ magic
+    eigenvalues = np.linalg.eigvals(invariant)
+
+    def matches(target: np.ndarray) -> bool:
+        distances = np.max(
+            np.abs(eigenvalues - target[_SPECTRUM_PERMUTATIONS]),
+            axis=1,
+        )
+        return bool(np.min(distances) < tolerance)
+
+    if matches(np.ones(4, dtype=complex)) or matches(-np.ones(4, dtype=complex)):
+        return 0
+    if matches(np.array([1j, 1j, -1j, -1j])):
+        return 1
+    if matches(eigenvalues.conj()):
+        return 2
+    return 3
+
+
 def canonical_cost(rotations: list[tuple[str, float]], qubits: tuple[int, int]) -> int:
     r"""
     Get the two-qubit gate cost of a rotation sequence confined to one qubit pair.
 
     Whatever the sequence is, it composes to one element of U(4), and what that costs
     is decided by its canonical class alone: three CNOTs when all three canonical
-    parameters are non-trivial, two when at least one is, none when the element is
-    local. The parameters live modulo :math:`\pi/2`, where the canonical rotation is
-    itself a Clifford and folds into the single-qubit layer.
+    parameters are non-trivial, two when at least one is, one for the maximally
+    entangling CNOT class, and none when the element is local.
 
     This is what makes the difference between charging a run and pricing it. A run of
     two canonical rotations pays 2 rather than the 3 a flat cap charges -- an XY bond
@@ -128,20 +213,7 @@ def canonical_cost(rotations: list[tuple[str, float]], qubits: tuple[int, int]) 
     Returns:
         int: Two-qubit gate count, at most three.
     """
-    i, j = qubits
-    unitary = np.eye(4, dtype=complex)
-    for word, angle in rotations:
-        pauli = np.kron(_PAULI[word[i]], _PAULI[word[j]])
-        unitary = (np.cos(angle) * np.eye(4) - 1j * np.sin(angle) * pauli) @ unitary
-
-    angles = _canonical_angles(_magic_form(unitary)[2])
-    quarter = np.pi / 2
-    trivial = [
-        min(angle % quarter, quarter - angle % quarter) < 1e-9 for angle in angles
-    ]
-    if all(trivial):
-        return 0
-    return 2 if any(trivial) else 3
+    return _minimum_cnot_count(two_qubit_unitary(rotations, qubits))
 
 
 def two_qubit_kak(unitary: np.ndarray, qubits: tuple[int, int], width: int) -> Circuit:

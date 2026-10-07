@@ -16,11 +16,11 @@ from itertools import pairwise
 import numpy as np
 from paulie.common.pauli_string_factory import get_pauli_string
 
+from lizzy._numerical import _positive_integer, _time_span, _validate_ode_tolerances
 from lizzy.driven import (
     DrivenHamiltonian,
     IntegrationFailure,
     _closure,
-    _positive_integer,
     synthesize_driven,
 )
 from lizzy.hamiltonian import Circuit, fold_phases
@@ -150,12 +150,7 @@ def expand_driven(
     steps = _positive_integer(steps, "steps")
     max_dimension = _positive_integer(max_dimension, "max_dimension")
     max_exponentials = _positive_integer(max_exponentials, "max_exponentials")
-    span = np.asarray(time_span, dtype=float)
-    if span.shape != (2,) or not np.all(np.isfinite(span)):
-        raise ValueError("time_span must contain two finite times")
-    start, end = map(float, span)
-    if not np.isfinite(end - start):
-        raise ValueError("time_span duration must be finite")
+    start, end = _time_span(time_span)
     if start != end and steps * (2 if method == "fer4" else 1) > max_exponentials:
         raise IntegrationFailure("max_exponentials exceeded before control evaluation")
     basis = _closure(hamiltonian.paulis, max_dimension)
@@ -219,9 +214,7 @@ def synthesize_expansion(
     """
     max_rhs_evaluations = _positive_integer(max_rhs_evaluations, "max_rhs_evaluations")
     max_compilation_segments = _positive_integer(max_compilation_segments, "max_compilation_segments")
-    for value, name in ((rtol, "rtol"), (atol, "atol")):
-        if not np.isfinite(value) or value <= 0:
-            raise ValueError(f"{name} must be finite and positive")
+    _validate_ode_tolerances(rtol, atol)
     plan = expand_driven(hamiltonian, time_span, method=method, steps=steps,
                          max_dimension=max_dimension, max_exponentials=max_exponentials)
     paulis = [get_pauli_string(w) for w in plan.basis]

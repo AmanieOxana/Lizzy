@@ -1,8 +1,9 @@
 # Wei–Norman implementation review
 
-Reviewed against the primary literature on 2026-09-25. This is a review of
-Lizzy's finite-qubit, closed-unitary implementation, not an implementation of
-every framework or example in the cited tutorial.
+Reviewed against the primary literature on 2026-09-25 and rechecked during the
+code-organization audit on 2026-10-07. Lizzy implements the Wei–Norman
+product-coordinate equations for finite-qubit, closed-unitary dynamics. It does
+not implement every framework or example in the cited papers.
 
 ## Sources and scope
 
@@ -23,6 +24,21 @@ coordinate breakdown separately from the perfectly regular physical propagator.
 Lizzy covers real coefficients multiplying fixed Hermitian Pauli words. It does
 not implement the tutorial's general non-Hermitian operator bases, infinite
 bosonic Hilbert spaces, Gaussian phase-space machinery, or Lindblad dynamics.
+
+## Fidelity verdict
+
+The production core is a numerical implementation of the paper's Lie-algebra
+decoupling method, not an unrelated variational ansatz: it constructs the control
+closure, derives the coordinate Jacobian from adjoint actions, and integrates
+the resulting Wei–Norman equations. It neither fits endpoint unitaries nor uses
+a product-formula approximation inside a chart. Numerical integration still
+introduces error.
+
+Lizzy-specific engineering surrounds that core: deterministic basis ordering,
+commuting-component splitting, pulse boundaries, condition-triggered interval
+bisection, work limits, and native gate emission. These are not new theorems
+from the papers. In particular, restarts concatenate locally valid factors;
+they do not provide a globally nonsingular minimal parameterization.
 
 ## Derivation in Lizzy's convention
 
@@ -63,6 +79,32 @@ e^{-i\theta P}Qe^{i\theta P}
 This checks both the sign and the factor of two. Commuting directions are
 unchanged. No truncated BCH expansion is used.
 
+### Cross-check against Altafini's convention
+
+In Altafini's Eqs. (4)–(8), choose the skew-Hermitian basis \(A_j=-iP_j\),
+\(\gamma_j=\theta_j\), and \(a_j+u_j=h_j\). Then \(\Xi=M\), giving the same
+real coordinate equation directly. His later single-qubit example uses a
+different generator normalization and a repeated-axis ZYZ product; Lizzy uses
+each distinct basis element once per chart, not that specific Euler chart.
+Unlike the phase-insensitive state analysis in his Sec. III A, Lizzy retains
+an identity generator and the associated scalar phase when supplied.
+
+For example, independently differentiating the XYZ product in Lizzy's units
+gives
+
+\[
+M(x,y,z)=
+\begin{pmatrix}
+1 & 0 & \sin(2y)\\
+0 & \cos(2x) & -\sin(2x)\cos(2y)\\
+0 & \sin(2x) & \cos(2x)\cos(2y)
+\end{pmatrix},\qquad \det M=\cos(2y).
+\]
+
+This chart is regular at zero and singular at \(y=\pi/4+k\pi/2\). The
+closed-form regression in [the coordinate-solver tests](../tests/test_driven.py) checks both the
+Jacobian and this singular set, separately from dense numerical references.
+
 ### Reading the tutorial's notation carefully
 
 The published Eq. (24) defines conjugation coefficients using an explicit
@@ -90,12 +132,22 @@ analytic without nilpotence. Lizzy evaluates its Pauli rotation planes exactly.
 | Numerical solution of \(M\dot\theta=h\) | `driven.synthesize_driven` |
 | Commuting-component and pulse decomposition | `wei_norman.synthesize_wei_norman` |
 | Phase-preserving concrete native gates | `native.ladder_circuit`, `native.native_frame_circuit` |
+| Shared scalar/time/solver-option validation | `_numerical` (no synthesis or mathematical approximation) |
 
 The logical circuit stores application order, opposite to the displayed matrix
 product, so each chart emits its factors in reverse basis order. Restarting
 from zero coordinates on the next time interval appends a **left increment**:
 \(U(t_2,t_0)=U(t_2,t_1)U(t_1,t_0)\). This remains valid for driven Hamiltonians
 and backwards integration.
+
+The high-level API is `synthesize_wei_norman`, accepting a static Pauli sum or a
+`DrivenHamiltonian`, with optional pulse `breakpoints` and concrete native gate
+emission. `synthesize_driven` is the lower-level single-closure compiler for
+smooth controls; its time argument is an endpoint pair, and it returns logical
+Pauli rotations. The explicit static `synthesize(..., method="wei-norman")`
+route calls the high-level API. The automatic static router does not select
+Wei–Norman. Magnus/Fer in `expansions.py` are separate approximation methods,
+not part of this implementation of the Wei–Norman equations.
 
 ## Integrated policy and remaining limitations
 
@@ -125,15 +177,25 @@ and backwards integration.
 The independent Jacobian, analytic rotating-frame, reverse-time, global-phase,
 singularity, resource-limit, and dense-reference tests check different failure
 modes. The bounded results in `experiments/wei_norman_compact_results.json`
-motivate the chart-policy change; they are not a chemistry or scalability claim.
+are a retained historical record motivating the chart-policy change, not a
+second maintained solver or a chemistry/scalability claim. The superseded
+prototype and its monkeypatch comparison harness have been retired; production
+stress cases now live in `experiments/wei_norman_validation.py`.
 
 ## Integration validation
 
-On 2026-09-25, the full working-tree test suite passed: **514 tests**, with two
-SciPy sparse-efficiency warnings. Ruff and `git diff --check` also passed.
-Before committing, the scoped Wei–Norman changes were tested separately from
-unrelated local chemistry/GULPS work: **471 tests passed** in an isolated copy
-of the staged repository.
+The 2026-10-07 refactor centralizes input validation and removes the high-level
+API's dummy zero-time compilation used solely to check options. It does not
+change closure, adjoint/Jacobian construction, the ODE, factor order, chart
+policy, numerical defaults, or phase handling. Production math tests remain
+independent of the retired prototype.
+
+The 2026-10-07 rerun of the consolidated production harness on all 27 targets and
+both step policies gave **52 PASS and two expected CAP** results; the maximum
+passing strict error was `4.583e-11`. The historical snapshots below were not
+overwritten by that rerun. Routine tests now use representative cases and retain
+the independent equation, phase and failure-mode checks; the full target sweep
+remains in the production validation harness.
 
 The [production validation snapshot](wei_norman_validation.json) exercises 27
 targets with both `max_step=0.025` and the adaptive default, using the actual

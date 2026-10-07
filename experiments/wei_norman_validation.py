@@ -1,38 +1,33 @@
-"""Bounded, phase-preserving test of compact Wei–Norman coordinates.
+"""Validate production Wei–Norman synthesis on a fixed small-instance corpus.
 
-Run python -m experiments.wei_norman_compact_bench [--json]. The historical
-"production" arm pins chart_radius=0.5 even after compact-policy integration.
-A scoped patch substitutes only the low-level coordinate solver, so
-all three variants retain the same component splitting, pulse handling, static
-commuting shortcut, resource budgets, and concrete native emission portfolio.
-Dense references assess completed circuits; they never guide synthesis.
+Run python -m experiments.wei_norman_validation --json. Both modes call the
+real public compiler; no duplicate solver or runtime monkeypatch is involved.
+Dense references are validation oracles, never inputs to synthesis.
 """
 
 import argparse
 import json
 from dataclasses import dataclass, field
 from time import perf_counter
-from unittest.mock import patch
 
 import numpy as np
 from scipy.linalg import expm
 
-from experiments.wei_norman_compact import synthesize_compact
 from lizzy.dense import circuit_matrix, pauli_matrix
 from lizzy.driven import AlgebraTooLarge, DrivenHamiltonian, IntegrationFailure
 from lizzy.driven_bench import _dense_reference
 from lizzy.hamiltonian import hamiltonian
-from lizzy.kernels import compile_layer
 from lizzy.synthesis_bench import (
     BenchmarkCase,
     _emission,
     _errors,
-    _exact_static,
     _static_case,
     _versions,
     benchmark_cases,
 )
 from lizzy.wei_norman import synthesize_wei_norman
+
+MODES = ("resolved-step", "adaptive-default-step")
 
 
 @dataclass
@@ -97,108 +92,98 @@ def trials():
                                      _dense_reference(drive, span), "independent dense DOP853"))
 
 
-def run_variant(trial, variant):
+def compile_trial(trial, mode):
+    """Compile with the public API and fixed tolerances/shared work limits."""
+    if mode not in MODES:
+        raise ValueError(f"unknown mode: {mode}")
     case = trial.case
     compiler_input = (case.hamiltonian if case.static_coefficients is None else
                       hamiltonian(dict(zip(case.hamiltonian.paulis, case.static_coefficients))))
-    options = {"max_dimension": 32, "rtol": 1e-10, "atol": 1e-12, "max_step": 0.025,
-               "condition_limit": 100.0, "max_rhs_evaluations": 20000,
-               "max_segments": 1024, "emission": "none"}
+    options = {
+        "max_dimension": 32, "rtol": 1e-10, "atol": 1e-12,
+        "chart_radius": None, "condition_limit": 100.0,
+        "max_rhs_evaluations": 20000, "max_segments": 1024, "emission": "none",
+    }
+    if mode == "resolved-step":
+        options["max_step"] = 0.025
     options.update(trial.options)
-    if variant == "production":
-        # Preserve the pre-integration comparator for this archived experiment.
-        options["chart_radius"] = 0.5
-        return synthesize_wei_norman(compiler_input, case.time_span, **options)
-
-    def replacement(drive, span, **kwargs):
-        kwargs.pop("chart_radius", None)
-        return synthesize_compact(drive, span, restart=variant == "condition-restart", **kwargs)
-
-    if variant not in {"single-product", "condition-restart"}:
-        raise ValueError(f"unknown variant: {variant}")
-    # Changes this process's binding only, not a repository file or the runtime
-    # of another process. The context manager restores it even on failure.
-    with patch("lizzy.wei_norman.synthesize_driven", replacement):
-        return synthesize_wei_norman(compiler_input, case.time_span, **options)
+    return synthesize_wei_norman(compiler_input, case.time_span, **options)
 
 
-def assess(case, circuit, *, strict=True):
+def assess(case, circuit):
+    """Count a concrete artifact and require strict, phase-sensitive accuracy."""
     backend, emitted = _emission(circuit, case.hamiltonian.n_qubits)
     actual = emitted.get_unitary()
     logical = circuit_matrix(circuit, case.hamiltonian.n_qubits)
     discrepancy = float(np.linalg.norm(actual - logical, 2))
     aligned, error = _errors(actual, case.target)
-    valid = np.isfinite(discrepancy) and discrepancy < 1e-8
-    passed = valid and np.isfinite(error) and (error if strict else aligned) <= 1e-6
-    return {"status": "PASS" if passed else "FAIL_ACCURACY", "rotations": len(circuit),
-            "cx": emitted.two_qubit_gates, "native_gates": len(emitted.gates),
-            "backend": backend, "strict_error": error, "aligned_error": aligned,
-            "emission_discrepancy": discrepancy, "strict_required": strict}
+    passed = (np.isfinite(discrepancy) and discrepancy < 1e-8
+              and np.isfinite(error) and error <= 1e-6)
+    return {
+        "status": "PASS" if passed else "FAIL_ACCURACY",
+        "rotations": len(circuit), "cx": emitted.two_qubit_gates,
+        "native_gates": len(emitted.gates), "backend": backend,
+        "strict_error": error, "aligned_error": aligned,
+        "emission_discrepancy": discrepancy, "strict_required": True,
+    }
 
 
 def run(selected=None):
+    """Retain failures and the explicitly expected default-dimension refusals."""
     selected = list(trials()) if selected is None else list(selected)
     rows = []
     for trial in selected:
-        case = trial.case
-        for variant in ("production", "single-product", "condition-restart"):
-            row = {"case": case.name, "variant": variant}
+        for mode in MODES:
+            row = {"case": trial.case.name, "mode": mode}
             start = perf_counter()
             try:
-                result = run_variant(trial, variant)
+                result = compile_trial(trial, mode)
                 row["compile_seconds"] = perf_counter() - start
-                row.update(assess(case, result.circuit))
-                row.update(dimension=result.dimension, charts=result.charts,
-                           rhs_evaluations=result.rhs_evaluations,
-                           rejected_intervals=result.rejected_intervals,
-                           peak_sampled_condition=result.max_observed_condition)
+                row.update(assess(trial.case, result.circuit))
+                row.update(
+                    dimension=result.dimension, charts=result.charts,
+                    rhs_evaluations=result.rhs_evaluations,
+                    rejected_intervals=result.rejected_intervals,
+                    peak_sampled_condition=result.max_observed_condition,
+                )
             except AlgebraTooLarge as exc:
-                row.update(status="CAP", detail=str(exc))
+                row.update(status="CAP" if trial.case.expected_cap else "FAIL_CAP",
+                           detail=str(exc))
             except (IntegrationFailure, ValueError, RuntimeError) as exc:
                 row.update(status="FAIL_COMPILE", detail=f"{type(exc).__name__}: {exc}")
             row["total_seconds"] = perf_counter() - start
             rows.append(row)
-        # These are named existing candidates, not the complete auto router.
-        if case.static_coefficients is not None:
-            for name in ("existing-orthogonal", "existing-pair-kernel"):
-                if name == "existing-pair-kernel" and case.hamiltonian.n_qubits != 2:
-                    continue
-                row = {"case": case.name, "variant": name}
-                try:
-                    if name == "existing-orthogonal":
-                        circuit = _exact_static(case)
-                    else:
-                        static = hamiltonian(dict(zip(case.hamiltonian.paulis,
-                                                      case.static_coefficients)))
-                        circuit = compile_layer(static, case.time_span[1] - case.time_span[0])
-                    row.update(assess(case, circuit, strict=False))
-                except (NotImplementedError, ValueError, StopIteration) as exc:
-                    row.update(status="UNSUPPORTED", detail=f"{type(exc).__name__}: {exc}")
-                rows.append(row)
-    return {"configuration": {
-        "seed": 20260925, "error_threshold": 1e-6, "rtol": 1e-10, "atol": 1e-12,
-        "max_step": 0.025, "condition_limit": 100, "max_rhs_evaluations": 20000,
-        "max_segments": 1024, "default_dimension_cap": 32,
-        "factor_order": "production weight-first; explicit XYZ in singularity cases",
-        "production_comparator": "historical radius-limited policy, chart_radius=0.5",
-        "emission": "same concrete native-ladder / eligible native-frame for every row",
-        "accuracy": "WN strict operator norm including global phase; existing exact "
-                    "candidates phase-aligned, both errors reported",
-        "scope": "empirical <=3 qubit experiments, not chemistry or a certified router",
-        "conditioning": "sampled, not a continuous nonsingularity guarantee",
-        "timings": "single runs, normal caches, compile excludes emission/reference/verification",
-        }, "versions": _versions(),
-        "cases": [{"name": t.case.name, "paulis": t.case.hamiltonian.paulis,
-                   "time_span": t.case.time_span, "reference": t.case.reference,
-                   "static_coefficients": t.case.static_coefficients,
-                   "options": t.options, "note": t.note} for t in selected], "rows": rows}
+    return {
+        "configuration": {
+            "seed": 20260925, "error_threshold": 1e-6,
+            "rtol": 1e-10, "atol": 1e-12, "chart_radius": None,
+            "modes": {"resolved-step": {"max_step": 0.025},
+                      "adaptive-default-step": {"max_step": "infinity (API default)"}},
+            "condition_limit": 100, "max_rhs_evaluations": 20000,
+            "max_segments": 1024, "default_dimension_cap": 32,
+            "emission": "concrete native-ladder / eligible native-frame",
+            "accuracy": "strict operator norm including global phase",
+            "scope": "empirical <=3 qubit validation, not a certified router",
+            "conditioning": "sampled, not a continuous nonsingularity guarantee",
+            "timings": "single run; compile excludes reference/emission/verification",
+        },
+        "versions": _versions(),
+        "cases": [
+            {"name": t.case.name, "paulis": t.case.hamiltonian.paulis,
+             "time_span": t.case.time_span, "reference": t.case.reference,
+             "static_coefficients": t.case.static_coefficients,
+             "expected_cap": t.case.expected_cap, "options": t.options, "note": t.note}
+            for t in selected
+        ],
+        "rows": rows,
+    }
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--case", action="append")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     selected = list(trials())
     if args.case:
         unknown = set(args.case) - {trial.case.name for trial in selected}
@@ -210,10 +195,11 @@ def main():
         print(json.dumps(report, indent=2, allow_nan=False))
     else:
         for row in report["rows"]:
-            print(f"{row['case']:26} {row['variant']:23} {row['status']:14} "
+            print(f"{row['case']:26} {row['mode']:23} {row['status']:14} "
                   f"CX={row.get('cx', '-'):>5} charts={row.get('charts', '-'):>4} "
                   f"strict_error={row.get('strict_error', '-')} {row.get('detail', '')}")
+    return int(any(row["status"].startswith("FAIL") for row in report["rows"]))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,0 +1,199 @@
+{
+  "primary": {
+    "tasks": [
+      {
+        "case": "H2-4",
+        "time": 0.25,
+        "costs": {
+          "jw": 27,
+          "bk": 21,
+          "df": 58
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "H2-4",
+        "time": 1,
+        "costs": {
+          "jw": 27,
+          "bk": 21,
+          "df": 58
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "LiH-8",
+        "time": 0.25,
+        "costs": {
+          "jw": 294,
+          "bk": 313,
+          "df": null
+        },
+        "common_feasible": false
+      },
+      {
+        "case": "LiH-8",
+        "time": 1,
+        "costs": {
+          "jw": 294,
+          "bk": 313,
+          "df": null
+        },
+        "common_feasible": false
+      },
+      {
+        "case": "BH-10",
+        "time": 0.25,
+        "costs": {
+          "jw": 873,
+          "bk": 901,
+          "df": null
+        },
+        "common_feasible": false
+      },
+      {
+        "case": "BH-10",
+        "time": 1,
+        "costs": {
+          "jw": 873,
+          "bk": 901,
+          "df": null
+        },
+        "common_feasible": false
+      },
+      {
+        "case": "LiH-12",
+        "time": 0.25,
+        "costs": {
+          "jw": 1883,
+          "bk": 1789,
+          "df": null
+        },
+        "common_feasible": false
+      },
+      {
+        "case": "LiH-12",
+        "time": 1,
+        "costs": {
+          "jw": 1883,
+          "bk": 1789,
+          "df": null
+        },
+        "common_feasible": false
+      }
+    ],
+    "expected_tasks": 8,
+    "common_coverage": 2,
+    "selector_fitted": false,
+    "zero_cost_floor_used": false,
+    "best_fixed_route": null,
+    "oracle_saving": null,
+    "strict_winner_routes": [],
+    "verdict": "INCONCLUSIVE_COVERAGE",
+    "reason": "Insufficient common coverage: need six tasks, all four training rows and both holdouts; stop at the fixed budget."
+  },
+  "posthoc_target_accuracy_only": {
+    "label": "POST_HOC_TARGET_ACCURACY_ONLY_NOT_PRIMARY",
+    "caveat": "Ignores the logical/emission mismatch threshold; cannot authorize fitting or establish feature value.",
+    "additional_backend_artifacts_admitted": 52,
+    "tasks": [
+      {
+        "case": "H2-4",
+        "time": 0.25,
+        "costs": {
+          "jw": 27,
+          "bk": 21,
+          "df": 58
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "H2-4",
+        "time": 1,
+        "costs": {
+          "jw": 27,
+          "bk": 21,
+          "df": 58
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "LiH-8",
+        "time": 0.25,
+        "costs": {
+          "jw": 294,
+          "bk": 313,
+          "df": 828
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "LiH-8",
+        "time": 1,
+        "costs": {
+          "jw": 294,
+          "bk": 313,
+          "df": 828
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "BH-10",
+        "time": 0.25,
+        "costs": {
+          "jw": 873,
+          "bk": 901,
+          "df": 1856
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "BH-10",
+        "time": 1,
+        "costs": {
+          "jw": 873,
+          "bk": 901,
+          "df": 1934
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "LiH-12",
+        "time": 0.25,
+        "costs": {
+          "jw": 1883,
+          "bk": 1789,
+          "df": 3618
+        },
+        "common_feasible": true
+      },
+      {
+        "case": "LiH-12",
+        "time": 1,
+        "costs": {
+          "jw": 1883,
+          "bk": 1789,
+          "df": 4034
+        },
+        "common_feasible": true
+      }
+    ],
+    "expected_tasks": 8,
+    "common_coverage": 8,
+    "selector_fitted": false,
+    "zero_cost_floor_used": false,
+    "best_fixed_route": "bk",
+    "oracle_saving": 0.023273184053895446,
+    "strict_winner_routes": [
+      "jw",
+      "bk"
+    ],
+    "fixed_geomean_cx": {
+      "jw": 337.98226694939535,
+      "bk": 320.82979290933594,
+      "df": 767.8377232438147
+    },
+    "oracle_geomean_cx": 313.3630620889838
+  }
+}
+

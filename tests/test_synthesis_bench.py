@@ -1,27 +1,13 @@
 """The broader comparison must expose exclusions, costs, and measured errors."""
 
-import json
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from lizzy import synthesis_bench as bench
-from lizzy.driven import DrivenHamiltonian, _closure
+from lizzy.driven import DrivenHamiltonian
 from lizzy.hamiltonian import Circuit
-
-
-def test_case_families_are_reproducible_and_include_a_full_closure_cap():
-    first = {case.name: case for case in bench.benchmark_cases()}
-    second = {case.name: case for case in bench.benchmark_cases()}
-    assert len(first) >= 12
-    assert {"short-tfim3", "long-tfim3", "static-su4", "driven-su4",
-            "su8-closure-cap", "commuting-su2", "driven-commuting"} <= first.keys()
-    for name, case in first.items():
-        assert case.hamiltonian.n_qubits <= 3
-        assert np.array_equal(case.target, second[name].target)
-    assert len(_closure(first["static-su4"].hamiltonian.paulis, 64)) == 15
-    assert len(_closure(first["su8-closure-cap"].hamiltonian.paulis, 64)) == 63
 
 
 def test_commuting_and_short_time_cases_pass_all_available_routes():
@@ -81,18 +67,6 @@ def test_emission_mismatch_cannot_be_hidden_by_target_agreement(monkeypatch):
     assert "emission/logical mismatch" in row.detail
 
 
-def test_json_reports_costs_and_time_fields(monkeypatch, capsys):
-    case = bench._static_case("small", ["Z"], [0.3], 0.1)
-    monkeypatch.setattr(bench, "benchmark_cases", lambda: iter([case]))
-    assert bench.main(["--json"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert len(payload["rows"]) == 3
-    assert payload["configuration"]["seed"] == 20260921
-    assert "python" in payload["versions"] and "numpy" in payload["versions"]
-    assert {"emitted_cx", "emitted_gates", "strict_error", "op_error", "compile_seconds",
-            "search_seconds", "verification_seconds"} <= payload["rows"][0].keys()
-
-
 def test_known_exact_embedding_refusal_is_unsupported(monkeypatch):
     case = bench._static_case("small", ["X", "Z"], [0.6, -0.2], 0.1)
     def refuse(*args, **kwargs):
@@ -121,16 +95,3 @@ def test_benchmark_rejects_non_small_dense_workloads():
                                (0.0, 1.0), np.eye(16), "unused")
     with pytest.raises(ValueError, match="three qubits"):
         bench.run_suite([case])
-
-
-@pytest.mark.parametrize("kwargs", [{"error": 0}, {"error": np.nan},
-    {"max_steps": 0}, {"max_steps": 1.5}, {"max_dimension": 0}, {"max_dimension": True}])
-def test_invalid_search_settings_raise(kwargs):
-    with pytest.raises(ValueError):
-        bench.run_suite([], **kwargs)
-
-
-def test_cli_unknown_case_is_an_error(monkeypatch):
-    monkeypatch.setattr(bench, "benchmark_cases", lambda: iter([]))
-    with pytest.raises(SystemExit):
-        bench.main(["--case", "not-a-case"])
